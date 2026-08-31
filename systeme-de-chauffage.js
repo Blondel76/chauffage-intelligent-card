@@ -1,8 +1,14 @@
 /*
  * ==========================================================
  * SYSTEME DE CHAUFFAGE
- * TEST : RECUPERATION D'UNE ENTITE
+ * ETAPE 4 : TEMPERATURE INTERIEURE + EXTERIEURE
  * ==========================================================
+ *
+ * Les deux entités sont choisies dans l'interface graphique.
+ *
+ * temperature_entity
+ * outside_temperature_entity
+ *
  */
 
 
@@ -21,7 +27,7 @@ class SystemeChauffageCard extends HTMLElement {
 
 
     // ------------------------------------------------------
-    // HTML
+    // HTML + CSS
     // ------------------------------------------------------
 
     this.shadowRoot.innerHTML = `
@@ -32,19 +38,31 @@ class SystemeChauffageCard extends HTMLElement {
           display: block;
         }
 
+
+        /* ==================================================
+           CARTE
+           ================================================== */
+
         .card {
 
           background: #1c1c1c;
 
-          border: 1px solid #333;
+          border: 1px solid #333333;
 
           border-radius: 12px;
 
           padding: 16px;
 
+          box-sizing: border-box;
+
           color: white;
 
         }
+
+
+        /* ==================================================
+           EN-TETE
+           ================================================== */
 
         .header {
 
@@ -56,90 +74,237 @@ class SystemeChauffageCard extends HTMLElement {
 
         }
 
+
         .title {
 
           font-size: 18px;
 
+          font-weight: 500;
+
         }
+
+
+        .icon {
+
+          color: #ff9800;
+
+          display: flex;
+
+          align-items: center;
+
+        }
+
 
         ha-icon {
 
           --mdc-icon-size: 28px;
 
-          color: #ff9800;
+        }
+
+
+        /* ==================================================
+           GRILLE
+           ================================================== */
+
+        .grid {
+
+          display: grid;
+
+          grid-template-columns: 1fr 1fr;
+
+          gap: 10px;
+
+          margin-top: 16px;
 
         }
+
+
+        /* ==================================================
+           BLOCS
+           ================================================== */
 
         .box {
 
           background: #242424;
 
+          border: 1px solid #333333;
+
           border-radius: 10px;
 
           padding: 12px;
 
-          margin-top: 12px;
-
         }
+
 
         .label {
 
-          color: #999;
-
           font-size: 13px;
+
+          color: #999999;
 
         }
 
+
         .value {
+
+          margin-top: 5px;
 
           font-size: 22px;
 
-          margin-top: 6px;
+        }
+
+
+        .unit {
+
+          font-size: 14px;
+
+          color: #999999;
 
         }
 
       </style>
 
 
+      <!-- ==================================================
+           CARTE
+           ================================================== -->
+
       <div class="card">
 
 
+        <!-- =================================================
+             EN-TETE
+             ================================================= -->
+
         <div class="header">
+
 
           <div class="title">
             Chauffage
           </div>
 
-          <ha-icon icon="mdi:fire"></ha-icon>
+
+          <div class="icon">
+
+            <ha-icon icon="mdi:fire"></ha-icon>
+
+          </div>
+
 
         </div>
 
 
-        <div class="box">
+        <!-- =================================================
+             GRILLE
+             ================================================= -->
 
-          <div class="label">
-            Entité sélectionnée
+        <div class="grid">
+
+
+          <!-- ===============================================
+               TEMPERATURE INTERIEURE
+               =============================================== -->
+
+          <div class="box">
+
+            <div class="label">
+              Température intérieure
+            </div>
+
+
+            <div class="value">
+
+              <span class="temperature">
+                --
+              </span>
+
+
+              <span class="unit">
+                °C
+              </span>
+
+            </div>
+
           </div>
 
-          <div class="value entity-id">
-            --
+
+          <!-- ===============================================
+               TEMPERATURE EXTERIEURE
+               =============================================== -->
+
+          <div class="box">
+
+            <div class="label">
+              Température extérieure
+            </div>
+
+
+            <div class="value">
+
+              <span class="exterieur">
+                --
+              </span>
+
+
+              <span class="unit">
+                °C
+              </span>
+
+            </div>
+
           </div>
+
+
+          <!-- ===============================================
+               CONSIGNE
+               =============================================== -->
+
+          <div class="box">
+
+            <div class="label">
+              Consigne
+            </div>
+
+
+            <div class="value">
+
+              <span class="consigne">
+                --
+              </span>
+
+
+              <span class="unit">
+                °C
+              </span>
+
+            </div>
+
+          </div>
+
+
+          <!-- ===============================================
+               ETAT
+               =============================================== -->
+
+          <div class="box">
+
+            <div class="label">
+              État
+            </div>
+
+
+            <div class="value">
+
+              <span class="etat">
+                Arrêté
+              </span>
+
+            </div>
+
+          </div>
+
 
         </div>
-
-
-        <div class="box">
-
-          <div class="label">
-            Valeur
-          </div>
-
-          <div class="value temperature">
-            --
-          </div>
-
-        </div>
-
 
       </div>
 
@@ -147,19 +312,27 @@ class SystemeChauffageCard extends HTMLElement {
 
 
     // ------------------------------------------------------
-    // ELEMENTS HTML
+    // POIGNEES VERS LES ELEMENTS HTML
     // ------------------------------------------------------
 
     this._title =
       this.shadowRoot.querySelector(".title");
 
 
-    this._entityId =
-      this.shadowRoot.querySelector(".entity-id");
-
-
     this._temperature =
       this.shadowRoot.querySelector(".temperature");
+
+
+    this._exterieur =
+      this.shadowRoot.querySelector(".exterieur");
+
+
+    this._consigne =
+      this.shadowRoot.querySelector(".consigne");
+
+
+    this._etat =
+      this.shadowRoot.querySelector(".etat");
 
   }
 
@@ -178,7 +351,7 @@ class SystemeChauffageCard extends HTMLElement {
 
 
   // ========================================================
-  // DONNEES HOME ASSISTANT
+  // DONNEES DE HOME ASSISTANT
   // ========================================================
 
   set hass(hass) {
@@ -223,60 +396,76 @@ class SystemeChauffageCard extends HTMLElement {
       this.config.title || "Chauffage";
 
 
-    // ------------------------------------------------------
-    // IDENTIFIANT DE L'ENTITE
-    // ------------------------------------------------------
+    // ======================================================
+    // TEMPERATURE INTERIEURE
+    // ======================================================
 
-    const entityId =
+    const temperatureEntityId =
       this.config.temperature_entity;
 
 
-    this._entityId.textContent =
-      entityId || "Aucune entité sélectionnée";
-
-
-    // ------------------------------------------------------
-    // SI AUCUNE ENTITE N'EST CONFIGUREE
-    // ------------------------------------------------------
-
-    if (!entityId) {
+    if (!temperatureEntityId) {
 
       this._temperature.textContent =
-        "Pas d'entité";
+        "--";
 
-      return;
+    } else {
+
+      const temperatureEntity =
+        this._hass.states[
+          temperatureEntityId
+        ];
+
+
+      if (!temperatureEntity) {
+
+        this._temperature.textContent =
+          "Erreur";
+
+      } else {
+
+        this._temperature.textContent =
+          temperatureEntity.state;
+
+      }
 
     }
 
 
-    // ------------------------------------------------------
-    // RECUPERATION DE L'ENTITE
-    // ------------------------------------------------------
+    // ======================================================
+    // TEMPERATURE EXTERIEURE
+    // ======================================================
 
-    const entity =
-      this._hass.states[entityId];
+    const outsideEntityId =
+      this.config.outside_temperature_entity;
 
 
-    // ------------------------------------------------------
-    // SI L'ENTITE N'EXISTE PAS
-    // ------------------------------------------------------
+    if (!outsideEntityId) {
 
-    if (!entity) {
+      this._exterieur.textContent =
+        "--";
 
-      this._temperature.textContent =
-        "Entité introuvable";
+    } else {
 
-      return;
+      const outsideEntity =
+        this._hass.states[
+          outsideEntityId
+        ];
+
+
+      if (!outsideEntity) {
+
+        this._exterieur.textContent =
+          "Erreur";
+
+      } else {
+
+        this._exterieur.textContent =
+          outsideEntity.state;
+
+      }
 
     }
-
-
-    // ------------------------------------------------------
-    // AFFICHAGE DE LA VALEUR
-    // ------------------------------------------------------
-
-    this._temperature.textContent =
-      entity.state;
 
   }
 
@@ -287,13 +476,13 @@ class SystemeChauffageCard extends HTMLElement {
 
   getCardSize() {
 
-    return 2;
+    return 3;
 
   }
 
 
   // ========================================================
-  // EDITEUR VISUEL
+  // EDITEUR VISUEL HOME ASSISTANT
   // ========================================================
 
   static getConfigForm() {
@@ -301,6 +490,11 @@ class SystemeChauffageCard extends HTMLElement {
     return {
 
       schema: [
+
+
+        // --------------------------------------------------
+        // TITRE
+        // --------------------------------------------------
 
         {
           name: "title",
@@ -315,6 +509,10 @@ class SystemeChauffageCard extends HTMLElement {
 
         },
 
+
+        // --------------------------------------------------
+        // TEMPERATURE INTERIEURE
+        // --------------------------------------------------
 
         {
           name: "temperature_entity",
@@ -335,30 +533,147 @@ class SystemeChauffageCard extends HTMLElement {
 
           }
 
+        },
+
+
+        // --------------------------------------------------
+        // TEMPERATURE EXTERIEURE
+        // --------------------------------------------------
+
+        {
+          name: "outside_temperature_entity",
+
+          required: true,
+
+          selector: {
+
+            entity: {
+
+              filter: {
+
+                domain: "sensor"
+
+              }
+
+            }
+
+          }
+
+        },
+
+
+        // --------------------------------------------------
+        // THERMOSTAT
+        // --------------------------------------------------
+
+        {
+          name: "climate_entity",
+
+          required: false,
+
+          selector: {
+
+            entity: {
+
+              filter: {
+
+                domain: "climate"
+
+              }
+
+            }
+
+          }
+
+        },
+
+
+        // --------------------------------------------------
+        // COEFFICIENT
+        // --------------------------------------------------
+
+        {
+          name: "coefficient_entity",
+
+          required: false,
+
+          selector: {
+
+            entity: {
+
+              filter: {
+
+                domain: "input_number"
+
+              }
+
+            }
+
+          }
+
         }
 
       ],
 
 
+      // ====================================================
+      // LABELS
+      // ====================================================
+
       computeLabel: (schema) => {
 
-        if (schema.name === "title") {
+        const labels = {
 
-          return "Titre";
+          title:
+            "Titre",
 
-        }
+          temperature_entity:
+            "Température intérieure",
+
+          outside_temperature_entity:
+            "Température extérieure",
+
+          climate_entity:
+            "Thermostat",
+
+          coefficient_entity:
+            "Coefficient"
+
+        };
 
 
-        if (
-          schema.name === "temperature_entity"
-        ) {
+        return labels[schema.name];
 
-          return "Température intérieure";
-
-        }
+      },
 
 
-        return schema.name;
+      // ====================================================
+      // AIDES
+      // ====================================================
+
+      computeHelper: (schema) => {
+
+        const helpers = {
+
+          title:
+            "Titre affiché en haut de la carte.",
+
+          temperature_entity:
+            "Capteur de température intérieure.",
+
+          outside_temperature_entity:
+            "Capteur de température extérieure.",
+
+          climate_entity:
+            "Thermostat du système de chauffage.",
+
+          coefficient_entity:
+            "Coefficient utilisé pour les calculs."
+
+        };
+
+
+        return helpers[schema.name];
 
       }
 
@@ -370,7 +685,7 @@ class SystemeChauffageCard extends HTMLElement {
 
 
 // ==========================================================
-// ENREGISTREMENT
+// ENREGISTREMENT DE LA CARTE
 // ==========================================================
 
 if (
@@ -386,7 +701,7 @@ if (
 
 
 // ==========================================================
-// DECLARATION POUR HOME ASSISTANT
+// INFORMATIONS POUR HOME ASSISTANT
 // ==========================================================
 
 window.customCards =
@@ -407,7 +722,7 @@ if (
     name: "Système de chauffage",
 
     description:
-      "Test récupération entité",
+      "Système de chauffage personnalisé.",
 
     preview: true
 
