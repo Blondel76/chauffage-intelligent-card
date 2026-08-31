@@ -1,7 +1,7 @@
 /*
  * ==========================================================
  * SYSTEME DE CHAUFFAGE
- * ETAPE 2 : CREER LES ZONES DU VISUEL
+ * ETAPE 3 : DONNER UNE POIGNEE AUX ELEMENTS
  * ==========================================================
  */
 
@@ -44,9 +44,7 @@ class SystemeChauffageCard extends HTMLElement {
         }
 
 
-        /* ==============================
-           EN-TETE
-           ============================== */
+        /* EN-TETE */
 
         .header {
 
@@ -82,9 +80,7 @@ class SystemeChauffageCard extends HTMLElement {
         }
 
 
-        /* ==============================
-           GRILLE
-           ============================== */
+        /* GRILLE */
 
         .grid {
 
@@ -99,9 +95,7 @@ class SystemeChauffageCard extends HTMLElement {
         }
 
 
-        /* ==============================
-           BLOC
-           ============================== */
+        /* BLOCS */
 
         .box {
 
@@ -154,17 +148,13 @@ class SystemeChauffageCard extends HTMLElement {
       <div class="card">
 
 
-        <!-- ==========================
-             EN-TETE
-             ========================== -->
+        <!-- EN-TETE -->
 
         <div class="header">
-
 
           <div class="title">
             Chauffage
           </div>
-
 
           <div class="icon">
 
@@ -174,13 +164,12 @@ class SystemeChauffageCard extends HTMLElement {
 
           </div>
 
-
         </div>
 
 
-        <!-- ==========================
+        <!-- =================================================
              GRILLE
-             ========================== -->
+             ================================================= -->
 
         <div class="grid">
 
@@ -195,7 +184,7 @@ class SystemeChauffageCard extends HTMLElement {
 
             <div class="value">
 
-              <span>
+              <span class="temperature">
                 --
               </span>
 
@@ -218,7 +207,7 @@ class SystemeChauffageCard extends HTMLElement {
 
             <div class="value">
 
-              <span>
+              <span class="consigne">
                 --
               </span>
 
@@ -231,7 +220,7 @@ class SystemeChauffageCard extends HTMLElement {
           </div>
 
 
-          <!-- TEMPERATURE EXTERIEURE -->
+          <!-- EXTERIEUR -->
 
           <div class="box">
 
@@ -241,7 +230,7 @@ class SystemeChauffageCard extends HTMLElement {
 
             <div class="value">
 
-              <span>
+              <span class="exterieur">
                 --
               </span>
 
@@ -264,7 +253,9 @@ class SystemeChauffageCard extends HTMLElement {
 
             <div class="value">
 
-              Arrêté
+              <span class="etat">
+                Arrêté
+              </span>
 
             </div>
 
@@ -273,10 +264,29 @@ class SystemeChauffageCard extends HTMLElement {
 
         </div>
 
-
       </div>
 
     `;
+
+
+    // ------------------------------------------------------
+    // ON RECUPERE NOS ELEMENTS HTML
+    // ------------------------------------------------------
+
+    this._temperature =
+      this.shadowRoot.querySelector(".temperature");
+
+
+    this._consigne =
+      this.shadowRoot.querySelector(".consigne");
+
+
+    this._exterieur =
+      this.shadowRoot.querySelector(".exterieur");
+
+
+    this._etat =
+      this.shadowRoot.querySelector(".etat");
 
   }
 
