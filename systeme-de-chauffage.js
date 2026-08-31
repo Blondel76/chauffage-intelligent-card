@@ -1,7 +1,7 @@
 /*
  * ==========================================================
  * SYSTEME DE CHAUFFAGE
- * ETAPE 1 : SQUELETTE VISUEL
+ * ETAPE 2 : CREER LES ZONES DU VISUEL
  * ==========================================================
  */
 
@@ -10,10 +10,6 @@ class SystemeChauffageCard extends HTMLElement {
   constructor() {
 
     super();
-
-    // ------------------------------------------------------
-    // CREATION DU SHADOW DOM
-    // ------------------------------------------------------
 
     this.attachShadow({ mode: "open" });
 
@@ -47,6 +43,10 @@ class SystemeChauffageCard extends HTMLElement {
 
         }
 
+
+        /* ==============================
+           EN-TETE
+           ============================== */
 
         .header {
 
@@ -82,41 +82,89 @@ class SystemeChauffageCard extends HTMLElement {
         }
 
 
-        .content {
+        /* ==============================
+           GRILLE
+           ============================== */
 
-          margin-top: 15px;
+        .grid {
+
+          display: grid;
+
+          grid-template-columns: 1fr 1fr;
+
+          gap: 10px;
+
+          margin-top: 16px;
+
+        }
+
+
+        /* ==============================
+           BLOC
+           ============================== */
+
+        .box {
+
+          background: #242424;
+
+          border: 1px solid #333333;
+
+          border-radius: 10px;
+
+          padding: 12px;
+
+        }
+
+
+        .label {
+
+          font-size: 13px;
+
+          color: #999999;
+
+        }
+
+
+        .value {
+
+          margin-top: 5px;
+
+          font-size: 22px;
+
+          font-weight: 400;
+
+        }
+
+
+        .unit {
 
           font-size: 14px;
 
-          color: #aaaaaa;
+          color: #999999;
 
         }
 
       </style>
 
 
-      <!--
-        =====================================================
-        CARTE
-        =====================================================
-      -->
+      <!-- =================================================
+           CARTE
+           ================================================= -->
 
       <div class="card">
 
 
-        <!-- EN-TETE -->
+        <!-- ==========================
+             EN-TETE
+             ========================== -->
 
         <div class="header">
 
-
-          <!-- TITRE -->
 
           <div class="title">
             Chauffage
           </div>
 
-
-          <!-- ICONE -->
 
           <div class="icon">
 
@@ -130,11 +178,98 @@ class SystemeChauffageCard extends HTMLElement {
         </div>
 
 
-        <!-- CONTENU -->
+        <!-- ==========================
+             GRILLE
+             ========================== -->
 
-        <div class="content">
+        <div class="grid">
 
-          Système de chauffage
+
+          <!-- TEMPERATURE INTERIEURE -->
+
+          <div class="box">
+
+            <div class="label">
+              Température intérieure
+            </div>
+
+            <div class="value">
+
+              <span>
+                --
+              </span>
+
+              <span class="unit">
+                °C
+              </span>
+
+            </div>
+
+          </div>
+
+
+          <!-- CONSIGNE -->
+
+          <div class="box">
+
+            <div class="label">
+              Consigne
+            </div>
+
+            <div class="value">
+
+              <span>
+                --
+              </span>
+
+              <span class="unit">
+                °C
+              </span>
+
+            </div>
+
+          </div>
+
+
+          <!-- TEMPERATURE EXTERIEURE -->
+
+          <div class="box">
+
+            <div class="label">
+              Extérieur
+            </div>
+
+            <div class="value">
+
+              <span>
+                --
+              </span>
+
+              <span class="unit">
+                °C
+              </span>
+
+            </div>
+
+          </div>
+
+
+          <!-- ETAT -->
+
+          <div class="box">
+
+            <div class="label">
+              État
+            </div>
+
+            <div class="value">
+
+              Arrêté
+
+            </div>
+
+          </div>
+
 
         </div>
 
@@ -158,12 +293,12 @@ class SystemeChauffageCard extends HTMLElement {
 
 
   // --------------------------------------------------------
-  // TAILLE DE LA CARTE
+  // TAILLE
   // --------------------------------------------------------
 
   getCardSize() {
 
-    return 2;
+    return 3;
 
   }
 
@@ -171,7 +306,7 @@ class SystemeChauffageCard extends HTMLElement {
 
 
 // ----------------------------------------------------------
-// ENREGISTREMENT DE LA CARTE
+// ENREGISTREMENT
 // ----------------------------------------------------------
 
 if (
@@ -187,7 +322,7 @@ if (
 
 
 // ----------------------------------------------------------
-// INFORMATIONS POUR HOME ASSISTANT
+// HOME ASSISTANT
 // ----------------------------------------------------------
 
 window.customCards =
