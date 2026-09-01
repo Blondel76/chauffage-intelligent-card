@@ -159,11 +159,12 @@ class SystemeChauffageCard extends HTMLElement {
     // en excluant "entity_etat" qui est traitée à part (texte
     // "Arrêté"/"Chauffe" plutôt que valeur + unité — voir render()).
     this._boxes = SystemeChauffageCard.FIELDS
-      .filter((field) => !field.isState)
+      .filter((field) => !field.isState && !field.isCalculated)
       .map((field) => ({
         label: field.label,
         entity: config[field.key],
         unit: field.unit,
+        attribute: field.attribute, // optionnel — voir _getState()
       }));
 
     this.config = config;
@@ -218,19 +219,30 @@ class SystemeChauffageCard extends HTMLElement {
   }
 
   // ==========================================================
-  // RÉCUPÉRATION D'UNE VALEUR D'ÉTAT
+  // RÉCUPÉRATION D'UNE VALEUR D'ÉTAT (OU D'UN ATTRIBUT)
   // ==========================================================
   // Petite fonction utilitaire : va chercher l'état d'une entité
   // dans hass.states, et renvoie "--" si l'entité n'est pas
   // configurée ou n'existe pas (évite les erreurs JS en pleine
   // figure si une entité est mal orthographiée).
-  _getState(entityId) {
+  //
+  // Le 2e paramètre "attribute" est optionnel : certaines valeurs
+  // ne sont pas dans l'état brut de l'entité mais dans ses
+  // attributs. Exemple : pour une entité climate, la température
+  // affichée (ex: "heat") n'est PAS la consigne — la consigne est
+  // dans l'attribut "temperature" de cette même entité.
+  _getState(entityId, attribute) {
 
     if (!entityId) return "--";
 
     const stateObj = this._hass.states[entityId];
 
     if (!stateObj) return "--";
+
+    if (attribute) {
+      const value = stateObj.attributes ? stateObj.attributes[attribute] : undefined;
+      return (value === undefined || value === null) ? "--" : value;
+    }
 
     return stateObj.state;
 
@@ -270,7 +282,10 @@ class SystemeChauffageCard extends HTMLElement {
     const boxesHtml = this._boxes
       .map((box) => {
 
-        const value = this._getState(box.entity);
+        // box.attribute est optionnel (voir FIELDS) : utilisé pour
+        // la "Consigne", qui vient de l'attribut "temperature" de
+        // l'entité climate plutôt que de son état brut.
+        const value = this._getState(box.entity, box.attribute);
 
         return `
           <div class="box">
@@ -278,6 +293,36 @@ class SystemeChauffageCard extends HTMLElement {
             <div class="value">
               <span>${value}</span>
               <span class="unit">${box.unit}</span>
+            </div>
+          </div>
+        `;
+
+      })
+      .join("");
+
+    // ======================================================
+    // BOXES CALCULÉES
+    // ======================================================
+    // Contrairement aux box ci-dessus (qui affichent une valeur
+    // brute d'entité), celles-ci sont calculées directement en
+    // JS à partir de plusieurs entités — voir SystemeChauffageCard.
+    // CALCULATIONS tout en bas du fichier pour le détail de chaque
+    // calcul (ex : temps de chauffe estimé).
+    //
+    // Comme render() est rappelé à chaque mise à jour de hass, le
+    // calcul est automatiquement refait et la valeur affichée se
+    // met à jour toute seule — pas besoin de logique supplémentaire.
+    const calculatedBoxesHtml = SystemeChauffageCard.CALCULATIONS
+      .map((calc) => {
+
+        const value = calc.compute(this.config, this._hass);
+
+        return `
+          <div class="box">
+            <div class="label">${calc.label}</div>
+            <div class="value">
+              <span>${value === null || value === undefined ? "--" : value}</span>
+              <span class="unit">${calc.unit}</span>
             </div>
           </div>
         `;
@@ -316,6 +361,7 @@ class SystemeChauffageCard extends HTMLElement {
 
       <div class="grid">
         ${boxesHtml}
+        ${calculatedBoxesHtml}
         ${etatHtml}
       </div>
 
@@ -337,34 +383,139 @@ class SystemeChauffageCard extends HTMLElement {
 // FIELDS — LISTE DES ENTITÉS CONFIGURABLES
 // ==============================================================
 // C'est LA liste centrale qui décrit chaque entité de la carte :
-//   - key      : nom de la clé dans la config (ex: "entity_temp_ext")
-//   - label    : texte affiché (dans la carte ET dans l'éditeur)
-//   - unit     : unité affichée dans la box
-//   - required : true = obligatoire (bloque setConfig + astérisque
-//                rouge dans l'éditeur graphique)
-//   - domain   : filtre optionnel pour l'éditeur, pour ne proposer
-//                que les entités du bon type (ex: "sensor", "climate")
-//   - isState  : true pour l'entité d'état, traitée à part dans
-//                render() (texte "Arrêté"/"Chauffe" plutôt que
-//                valeur + unité)
+//   - key       : nom de la clé dans la config (ex: "entity_temp_ext")
+//   - label     : texte affiché (dans la carte ET dans l'éditeur)
+//   - unit      : unité affichée dans la box
+//   - required  : true = obligatoire (bloque setConfig + astérisque
+//                 rouge dans l'éditeur graphique)
+//   - domain    : filtre optionnel pour l'éditeur, pour ne proposer
+//                 que les entités du bon type (ex: "sensor", "climate")
+//   - attribute : optionnel — si la valeur à afficher n'est pas
+//                 l'état brut de l'entité mais un de ses attributs
+//                 (ex : "temperature" pour lire la consigne d'un
+//                 climate, dont l'état brut est plutôt "heat"/"off")
+//   - isState   : true pour l'entité d'état, traitée à part dans
+//                 render() (texte "Arrêté"/"Chauffe" plutôt que
+//                 valeur + unité)
 //
 // setConfig(), render() ET l'éditeur graphique lisent tous les
 // trois cette même liste. Résultat : pour ajouter un nouveau champ
 // à ta carte, tu n'as QU'UNE LIGNE à ajouter ici, et il apparaîtra
 // automatiquement dans la carte ET dans le formulaire de config.
+//
+// Note : "Temps de chauffe" n'est PAS dans cette liste — ce n'est
+// plus une entité à sélectionner, mais une valeur CALCULÉE par la
+// carte elle-même. Voir SystemeChauffageCard.CALCULATIONS un peu
+// plus bas.
 // ==============================================================
 SystemeChauffageCard.FIELDS = [
-  { key: "entity_temp_ext",        label: "Température extérieure",   unit: "°C",     required: true,  domain: "sensor" },
-  { key: "entity_temp_int",        label: "Température intérieure",   unit: "°C",     required: true,  domain: "sensor" },
-  { key: "entity_consigne",        label: "Consigne",                 unit: "°C",     required: false, domain: "climate" },
-  { key: "entity_temps_chauffe",   label: "Temps de chauffe",         unit: "Min",    required: false },
-  { key: "entity_heure_anticipee", label: "Heure anticipée",          unit: "H",      required: false },
-  { key: "entity_heure_precedent", label: "Heure planning précédent", unit: "H",      required: false },
-  { key: "entity_heure_planning",  label: "Heure planning",           unit: "H",      required: false },
-  { key: "entity_planning",        label: "Planning en cours",        unit: "",       required: false },
-  { key: "entity_coefficient",     label: "Coefficient",              unit: "Min/°C", required: false },
+  { key: "entity_temp_ext",        label: "Température extérieure",   unit: "°C", required: true,  domain: "sensor" },
+  { key: "entity_temp_int",        label: "Température intérieure",   unit: "°C", required: true,  domain: "sensor" },
+  { key: "entity_consigne",        label: "Consigne",                 unit: "°C", required: true,  domain: "climate", attribute: "temperature" },
+  { key: "entity_coefficient",     label: "Coefficient",              unit: "",   required: true,  domain: "input_number" },
+  { key: "entity_heure_anticipee", label: "Heure anticipée",          unit: "H",  required: false },
+  { key: "entity_heure_precedent", label: "Heure planning précédent", unit: "H",  required: false },
+  { key: "entity_heure_planning",  label: "Heure planning",           unit: "H",  required: false },
+  { key: "entity_planning",        label: "Planning en cours",        unit: "",   required: false },
   { key: "entity_derive",          label: "Dérive",                   unit: "°C/Min", required: false },
-  { key: "entity_etat",            label: "État du chauffage",        unit: "",       required: true,  domain: "climate", isState: true },
+  { key: "entity_etat",            label: "État du chauffage",        unit: "",   required: true,  domain: "climate", isState: true },
+];
+
+// ==============================================================
+// CALCULS — valeurs calculées directement par la carte
+// ==============================================================
+// ⚠️ ZONE À REGARDER EN PRIORITÉ EN CAS DE PROBLÈME SUR UN CALCUL.
+//
+// Contrairement à FIELDS ci-dessus (qui affiche la valeur brute
+// d'une entité HA choisie dans l'éditeur), chaque entrée ici est
+// calculée EN JAVASCRIPT, directement dans la carte, à partir des
+// entités déjà sélectionnées dans FIELDS (donc pas besoin de créer
+// un template sensor / helper séparé dans Home Assistant).
+//
+// Comme render() est rappelé automatiquement à chaque mise à jour
+// de hass, le calcul est refait et la valeur affichée se met à
+// jour toute seule — pas de logique de rafraîchissement en plus
+// à écrire.
+//
+// Chaque entrée :
+//   - key      : identifiant interne (non utilisé pour l'instant,
+//                utile si tu veux retrouver un calcul par code)
+//   - label    : texte affiché
+//   - unit     : unité affichée
+//   - compute(config, hass) : fonction qui renvoie la valeur
+//                calculée, ou null si les données ne sont pas
+//                encore disponibles (hass pas encore chargé, etc.)
+//
+// Pour ajouter un futur calcul (dérive, heure anticipée, etc.),
+// ajoute simplement une nouvelle entrée dans ce tableau, sur le
+// même modèle que "temps_chauffe" ci-dessous.
+// ==============================================================
+SystemeChauffageCard.CALCULATIONS = [
+  {
+    key: "temps_chauffe",
+    label: "Temps de chauffe",
+    unit: "Min",
+
+    // ------------------------------------------------------
+    // CALCUL DU TEMPS DE CHAUFFE ESTIMÉ (en minutes)
+    // ------------------------------------------------------
+    // Traduction directe du template Jinja2 :
+    //
+    //   temp        = température intérieure actuelle
+    //   consigne    = température cible (attribut "temperature"
+    //                 de l'entité climate)
+    //   delta       = consigne - temp
+    //   coeff       = coefficient réglable, borné entre 10 et 60
+    //   facteur_ext = 1 + ((temp - température extérieure) / 50),
+    //                 borné entre 0.7 et 1.5
+    //   résultat    = round(delta * coeff * facteur_ext)
+    //                 mais 0 si delta <= 0.3°C (déjà à température)
+    //
+    // Entités utilisées, toutes définies plus haut dans FIELDS :
+    //   - entity_temp_int    → température intérieure
+    //   - entity_consigne    → consigne (attribut "temperature")
+    //   - entity_coefficient → coefficient réglable (input_number)
+    //   - entity_temp_ext    → température extérieure
+    // ------------------------------------------------------
+    compute(config, hass) {
+
+      // Pas encore de données hass disponibles : on ne calcule pas.
+      if (!hass) return null;
+
+      const temp = parseFloat(hass.states[config.entity_temp_int]?.state) || 0;
+
+      const consigneEntity = hass.states[config.entity_consigne];
+      const consigne = parseFloat(consigneEntity?.attributes?.temperature) || 0;
+
+      const delta = consigne - temp;
+
+      // Coefficient réglable, borné entre 10 et 60 (comme dans le
+      // template d'origine : {% if coeff < 10 %}...{% endif %}).
+      let coeff = parseFloat(hass.states[config.entity_coefficient]?.state);
+      if (isNaN(coeff)) coeff = 25; // valeur par défaut si le capteur n'a pas encore de valeur
+      coeff = Math.min(Math.max(coeff, 10), 60);
+
+      // Température extérieure, avec une valeur de secours à 10°C
+      // si le capteur n'est pas encore disponible.
+      const extBrut = parseFloat(hass.states[config.entity_temp_ext]?.state);
+      const ext = isNaN(extBrut) ? 10 : extBrut;
+
+      // Facteur d'ajustement selon l'écart avec l'extérieur,
+      // borné entre 0.7 et 1.5.
+      let facteurExt = 1 + ((temp - ext) / 50);
+      facteurExt = Math.min(Math.max(facteurExt, 0.7), 1.5);
+
+      // En dessous de 0.3°C d'écart, on considère qu'on est déjà
+      // à température : pas besoin de chauffer.
+      if (delta > 0.3) {
+        return Math.round(delta * coeff * facteurExt);
+      }
+
+      return 0;
+
+    },
+
+  },
 ];
 
 // ==============================================================
