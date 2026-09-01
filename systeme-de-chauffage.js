@@ -373,7 +373,7 @@ class SystemeChauffageCard extends HTMLElement {
           <div class="box">
 
             <div class="label">
-              Coéfficient
+              Coefficient
             </div>
 
             <div class="value">
