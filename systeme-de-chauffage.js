@@ -130,7 +130,6 @@ class SystemeChauffageCard extends HTMLElement {
   // type: custom:systeme-chauffage-card
   // entity_temp_ext: sensor.temperature_exterieure
   // entity_temp_int: sensor.temperature_interieure
-  // entity_consigne: climate.chauffage
   // entity_etat: climate.chauffage
   //
   // Tu peux ajouter d'autres clés (entity_temps_chauffe,
@@ -138,37 +137,34 @@ class SystemeChauffageCard extends HTMLElement {
   // ==========================================================
   setConfig(config) {
 
-    // Validation minimale : on vérifie qu'au moins une entité
-    // essentielle est fournie, sinon on lève une erreur claire.
-    // HA affichera automatiquement un message d'erreur dans la
-    // carte plutôt qu'un écran blanc silencieux.
-    if (!config.entity_temp_ext) {
+    // "required: true" dans FIELDS (voir tout en bas du fichier)
+    // sert à DEUX choses en même temps :
+    // 1) ici, on refuse la config si une entité obligatoire manque
+    // 2) dans l'éditeur graphique, ça affiche une petite astérisque
+    //    rouge et empêche de sauvegarder tant que ce n'est pas rempli.
+    // C'est pour ça que FIELDS est une liste PARTAGÉE, définie une
+    // seule fois : si tu ajoutes/retires un champ obligatoire, tu
+    // n'as qu'un seul endroit à modifier.
+    const missing = SystemeChauffageCard.FIELDS
+      .filter((field) => field.required && !config[field.key])
+      .map((field) => field.key);
+
+    if (missing.length > 0) {
       throw new Error(
-        "systeme-chauffage-card : vous devez définir 'entity_temp_ext' dans la configuration."
+        `systeme-chauffage-card : entité(s) obligatoire(s) manquante(s) : ${missing.join(", ")}`
       );
     }
 
-    // On définit ici la liste des box à afficher, avec :
-    // - label     : le texte affiché
-    // - entity    : la clé de config pointant vers l'entity_id (optionnel)
-    // - unit      : l'unité affichée
-    // - staticKey : pour les box qui n'ont pas encore d'entité HA
-    //               (on garde "--" en attendant, plutôt que de planter)
-    //
-    // Ça remplace les 10 blocs HTML dupliqués : on ne les décrit
-    // qu'une fois, ici, et render() se charge de les générer.
-    this._boxes = [
-      { label: "Température extérieur",     entity: config.entity_temp_ext,        unit: "°C" },
-      { label: "Température intérieure",    entity: config.entity_temp_int,        unit: "°C" },
-      { label: "Consigne",                  entity: config.entity_consigne,        unit: "°C" },
-      { label: "Temps de chauffe",          entity: config.entity_temps_chauffe,   unit: "Min" },
-      { label: "Heure anticipé",            entity: config.entity_heure_anticipee, unit: "H" },
-      { label: "Heure planning précédent",  entity: config.entity_heure_precedent, unit: "H" },
-      { label: "Heure planning",            entity: config.entity_heure_planning,  unit: "H" },
-      { label: "Planning en cours",         entity: config.entity_planning,        unit: "" },
-      { label: "Coefficient",               entity: config.entity_coefficient,     unit: "Min/°C" },
-      { label: "Dérive",                    entity: config.entity_derive,          unit: "°C/Min" },
-    ];
+    // On génère la liste des box à afficher à partir de FIELDS,
+    // en excluant "entity_etat" qui est traitée à part (texte
+    // "Arrêté"/"Chauffe" plutôt que valeur + unité — voir render()).
+    this._boxes = SystemeChauffageCard.FIELDS
+      .filter((field) => !field.isState)
+      .map((field) => ({
+        label: field.label,
+        entity: config[field.key],
+        unit: field.unit,
+      }));
 
     this.config = config;
 
@@ -178,6 +174,23 @@ class SystemeChauffageCard extends HTMLElement {
       this.render();
     }
 
+  }
+
+  // ==========================================================
+  // ÉDITEUR GRAPHIQUE
+  // ==========================================================
+  // Indique à Home Assistant quel élément utiliser comme interface
+  // graphique de configuration (le formulaire qui s'ouvre quand tu
+  // cliques sur "Modifier" sur la carte dans le dashboard).
+  // Sans ça, HA propose seulement un éditeur YAML brut.
+  static getConfigElement() {
+    return document.createElement("systeme-chauffage-card-editor");
+  }
+
+  // Configuration par défaut proposée quand on ajoute la carte
+  // depuis le sélecteur de cartes de l'UI (avant tout réglage).
+  static getStubConfig() {
+    return {};
   }
 
   // ==========================================================
@@ -318,6 +331,197 @@ class SystemeChauffageCard extends HTMLElement {
     return 4;
   }
 
+}
+
+// ==============================================================
+// FIELDS — LISTE DES ENTITÉS CONFIGURABLES
+// ==============================================================
+// C'est LA liste centrale qui décrit chaque entité de la carte :
+//   - key      : nom de la clé dans la config (ex: "entity_temp_ext")
+//   - label    : texte affiché (dans la carte ET dans l'éditeur)
+//   - unit     : unité affichée dans la box
+//   - required : true = obligatoire (bloque setConfig + astérisque
+//                rouge dans l'éditeur graphique)
+//   - domain   : filtre optionnel pour l'éditeur, pour ne proposer
+//                que les entités du bon type (ex: "sensor", "climate")
+//   - isState  : true pour l'entité d'état, traitée à part dans
+//                render() (texte "Arrêté"/"Chauffe" plutôt que
+//                valeur + unité)
+//
+// setConfig(), render() ET l'éditeur graphique lisent tous les
+// trois cette même liste. Résultat : pour ajouter un nouveau champ
+// à ta carte, tu n'as QU'UNE LIGNE à ajouter ici, et il apparaîtra
+// automatiquement dans la carte ET dans le formulaire de config.
+// ==============================================================
+SystemeChauffageCard.FIELDS = [
+  { key: "entity_temp_ext",        label: "Température extérieure",   unit: "°C",     required: true,  domain: "sensor" },
+  { key: "entity_temp_int",        label: "Température intérieure",   unit: "°C",     required: true,  domain: "sensor" },
+  { key: "entity_consigne",        label: "Consigne",                 unit: "°C",     required: false, domain: "climate" },
+  { key: "entity_temps_chauffe",   label: "Temps de chauffe",         unit: "Min",    required: false },
+  { key: "entity_heure_anticipee", label: "Heure anticipée",          unit: "H",      required: false },
+  { key: "entity_heure_precedent", label: "Heure planning précédent", unit: "H",      required: false },
+  { key: "entity_heure_planning",  label: "Heure planning",           unit: "H",      required: false },
+  { key: "entity_planning",        label: "Planning en cours",        unit: "",       required: false },
+  { key: "entity_coefficient",     label: "Coefficient",              unit: "Min/°C", required: false },
+  { key: "entity_derive",          label: "Dérive",                   unit: "°C/Min", required: false },
+  { key: "entity_etat",            label: "État du chauffage",        unit: "",       required: true,  domain: "climate", isState: true },
+];
+
+// ==============================================================
+// ÉDITEUR GRAPHIQUE (visuel "tuiles")
+// ==============================================================
+// Cette classe génère le formulaire qui s'affiche quand tu cliques
+// sur "Modifier" sur la carte dans le dashboard. Chaque champ de
+// FIELDS devient une "tuile" avec son label et un sélecteur
+// d'entité <ha-entity-picker> — le même composant que HA utilise
+// nativement (recherche, icônes, filtre par domaine).
+// ==============================================================
+class SystemeChauffageCardEditor extends HTMLElement {
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+
+  // Appelé une fois par HA avec la config actuelle de la carte
+  // (vide si on vient tout juste de l'ajouter au dashboard).
+  setConfig(config) {
+    this._config = config || {};
+    this._render();
+  }
+
+  // Comme pour la carte principale, HA injecte l'objet hass ici.
+  // <ha-entity-picker> en a besoin pour savoir quelles entités
+  // existent et afficher leurs noms/icônes dans la liste déroulante.
+  set hass(hass) {
+    this._hass = hass;
+    this._render();
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  // Construit le formulaire : une tuile par entrée de FIELDS.
+  _render() {
+
+    // On attend d'avoir à la fois hass et la config avant de
+    // dessiner quoi que ce soit.
+    if (!this._hass || !this._config) return;
+
+    this.shadowRoot.innerHTML = `
+
+      <style>
+
+        /* Grille "tuiles" : responsive, s'adapte à la largeur
+           du panneau d'édition (qui peut être étroit sur mobile). */
+        .grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+          gap: 12px;
+          padding: 4px 0 12px 0;
+        }
+
+        .tile {
+          background: var(--secondary-background-color, #242424);
+          border: 1px solid var(--divider-color, #333333);
+          border-radius: 10px;
+          padding: 10px 12px;
+        }
+
+        .tile-label {
+          font-size: 13px;
+          color: var(--secondary-text-color, #999999);
+          margin-bottom: 6px;
+          display: flex;
+          align-items: center;
+          gap: 4px;
+        }
+
+        .required-mark {
+          color: #ff5252;
+        }
+
+      </style>
+
+      <div class="grid">
+        ${SystemeChauffageCard.FIELDS.map((field) => `
+          <div class="tile">
+            <div class="tile-label">
+              ${field.label}
+              ${field.required ? '<span class="required-mark">*</span>' : ""}
+            </div>
+            <ha-entity-picker data-key="${field.key}"></ha-entity-picker>
+          </div>
+        `).join("")}
+      </div>
+
+    `;
+
+    // IMPORTANT : <ha-entity-picker> attend ses réglages (hass,
+    // value, required, includeDomains) en tant que PROPRIÉTÉS JS,
+    // pas en attributs HTML — impossible donc de les écrire
+    // directement dans le template ci-dessus. On les assigne ici,
+    // picker par picker, juste après l'avoir inséré dans le DOM.
+    const pickers = this.shadowRoot.querySelectorAll("ha-entity-picker");
+
+    pickers.forEach((picker) => {
+
+      const key = picker.dataset.key;
+      const field = SystemeChauffageCard.FIELDS.find((f) => f.key === key);
+
+      picker.hass = this._hass;
+      picker.value = this._config[key] || "";
+      picker.required = !!field.required;
+      picker.label = field.label;
+
+      // Filtre la liste déroulante pour ne proposer que les
+      // entités du bon domaine (ex: seulement les "sensor" pour
+      // une température), si un domaine est précisé dans FIELDS.
+      if (field.domain) {
+        picker.includeDomains = [field.domain];
+      }
+
+      // Quand l'utilisateur choisit (ou efface) une entité,
+      // ha-entity-picker émet un événement "value-changed".
+      // C'est notre signal pour mettre à jour la config.
+      picker.addEventListener("value-changed", (ev) => {
+        ev.stopPropagation(); // on gère l'événement ici, pas besoin qu'il remonte plus haut
+        this._updateConfig(key, ev.detail.value);
+      });
+
+    });
+
+  }
+
+  // Met à jour la config locale, puis PRÉVIENT Home Assistant du
+  // changement via un événement "config-changed". C'est le contrat
+  // standard que HA écoute pour sauvegarder automatiquement la
+  // nouvelle config de la carte (pas besoin de bouton "Enregistrer").
+  _updateConfig(key, value) {
+
+    this._config = {
+      ...this._config,
+      [key]: value,
+    };
+
+    const event = new CustomEvent("config-changed", {
+      detail: { config: this._config },
+      bubbles: true,
+      composed: true, // pour traverser la frontière du Shadow DOM
+    });
+
+    this.dispatchEvent(event);
+
+  }
+
+}
+
+if (!customElements.get("systeme-chauffage-card-editor")) {
+  customElements.define(
+    "systeme-chauffage-card-editor",
+    SystemeChauffageCardEditor
+  );
 }
 
 // ----------------------------------------------------------
