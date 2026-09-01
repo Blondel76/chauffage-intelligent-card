@@ -385,29 +385,61 @@ class SystemeChauffageCardEditor extends HTMLElement {
 
   // Appelé une fois par HA avec la config actuelle de la carte
   // (vide si on vient tout juste de l'ajouter au dashboard).
+  //
+  // ⚠️ BUG CORRIGÉ ICI : avant, setConfig() ET le setter hass()
+  // appelaient tous les deux _render(), qui reconstruisait TOUT
+  // le HTML à chaque fois (innerHTML = ...). Or HA réassigne hass
+  // très souvent — y compris pendant que tu tapes dans le champ
+  // de recherche du picker. Résultat : le <ha-entity-picker> était
+  // détruit et recréé sous tes doigts, ce qui fermait son menu
+  // déroulant en pleine frappe.
+  //
+  // La règle à retenir pour tout composant HA avec des champs
+  // interactifs : on construit la structure du DOM UNE SEULE FOIS,
+  // et ensuite on ne fait plus que mettre à jour les propriétés
+  // des éléments déjà en place (_updatePickers), sans jamais les
+  // recréer.
   setConfig(config) {
+
     this._config = config || {};
-    this._render();
+
+    // On ne construit le formulaire que s'il n'existe pas encore.
+    if (!this._built) {
+      this._buildForm();
+    }
+
+    this._updatePickers();
+
   }
 
-  // Comme pour la carte principale, HA injecte l'objet hass ici.
-  // <ha-entity-picker> en a besoin pour savoir quelles entités
-  // existent et afficher leurs noms/icônes dans la liste déroulante.
+  // Comme pour la carte principale, HA injecte l'objet hass ici,
+  // et le fait très fréquemment (à chaque changement d'état dans
+  // toute la maison, pas seulement pour cette carte).
   set hass(hass) {
+
     this._hass = hass;
-    this._render();
+
+    // Si le formulaire est déjà construit, on se contente de
+    // rafraîchir les propriétés des pickers existants — jamais
+    // de reconstruction ici, justement pour ne pas interrompre
+    // une saisie en cours.
+    if (this._built) {
+      this._updatePickers();
+    }
+
   }
 
   get hass() {
     return this._hass;
   }
 
-  // Construit le formulaire : une tuile par entrée de FIELDS.
-  _render() {
-
-    // On attend d'avoir à la fois hass et la config avant de
-    // dessiner quoi que ce soit.
-    if (!this._hass || !this._config) return;
+  // ==========================================================
+  // CONSTRUCTION (appelée UNE SEULE FOIS)
+  // ==========================================================
+  // Pose le style et une tuile par entrée de FIELDS, avec un
+  // <ha-entity-picker> vide dedans (sans valeur ni hass pour
+  // l'instant — ça viendra juste après, via _updatePickers).
+  _buildForm() {
 
     this.shadowRoot.innerHTML = `
 
@@ -458,20 +490,48 @@ class SystemeChauffageCardEditor extends HTMLElement {
 
     `;
 
-    // IMPORTANT : <ha-entity-picker> attend ses réglages (hass,
-    // value, required, includeDomains) en tant que PROPRIÉTÉS JS,
-    // pas en attributs HTML — impossible donc de les écrire
-    // directement dans le template ci-dessus. On les assigne ici,
-    // picker par picker, juste après l'avoir inséré dans le DOM.
+    // On attache les écouteurs d'événements ICI, une seule fois,
+    // sur les pickers qui viennent d'être créés. Comme ils ne
+    // seront plus jamais recréés, pas besoin de les rattacher
+    // à chaque mise à jour.
+    const pickers = this.shadowRoot.querySelectorAll("ha-entity-picker");
+
+    pickers.forEach((picker) => {
+
+      const key = picker.dataset.key;
+
+      // Quand l'utilisateur choisit (ou efface) une entité,
+      // ha-entity-picker émet un événement "value-changed".
+      picker.addEventListener("value-changed", (ev) => {
+        ev.stopPropagation(); // on gère l'événement ici, pas besoin qu'il remonte plus haut
+        this._updateConfig(key, ev.detail.value);
+      });
+
+    });
+
+    this._built = true;
+
+  }
+
+  // ==========================================================
+  // MISE À JOUR (appelée à chaque changement de hass ou de config)
+  // ==========================================================
+  // Ne touche QUE les propriétés des pickers déjà présents dans
+  // le DOM — ne recrée jamais d'élément. C'est ce qui permet de
+  // garder le focus et le menu déroulant ouverts pendant la frappe.
+  _updatePickers() {
+
+    if (!this._hass || !this._config) return;
+
     const pickers = this.shadowRoot.querySelectorAll("ha-entity-picker");
 
     pickers.forEach((picker) => {
 
       const key = picker.dataset.key;
       const field = SystemeChauffageCard.FIELDS.find((f) => f.key === key);
+      const newValue = this._config[key] || "";
 
       picker.hass = this._hass;
-      picker.value = this._config[key] || "";
       picker.required = !!field.required;
       picker.label = field.label;
 
@@ -482,13 +542,15 @@ class SystemeChauffageCardEditor extends HTMLElement {
         picker.includeDomains = [field.domain];
       }
 
-      // Quand l'utilisateur choisit (ou efface) une entité,
-      // ha-entity-picker émet un événement "value-changed".
-      // C'est notre signal pour mettre à jour la config.
-      picker.addEventListener("value-changed", (ev) => {
-        ev.stopPropagation(); // on gère l'événement ici, pas besoin qu'il remonte plus haut
-        this._updateConfig(key, ev.detail.value);
-      });
+      // On ne réassigne .value que si la valeur a réellement
+      // changé (par ex. après un config-changed déclenché ailleurs).
+      // Ça évite de perturber le champ de saisie interne du picker
+      // si l'utilisateur est justement en train d'y taper du texte
+      // de recherche (qui n'est pas la même chose que .value, mais
+      // autant limiter les écritures inutiles).
+      if (picker.value !== newValue) {
+        picker.value = newValue;
+      }
 
     });
 
