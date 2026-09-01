@@ -5,12 +5,6 @@ class SystemeChauffageCard extends HTMLElement {
 
     this.attachShadow({ mode: "open" });
 
-    this._hass = null;
-    this.config = null;
-    this._entities = [];
-    this._loading = false;
-    this._built = false;
-
     this._initStyles();
   }
 
@@ -50,6 +44,7 @@ class SystemeChauffageCard extends HTMLElement {
 
       .icon {
         color: var(--secondary-text-color, #999999);
+        transition: color 0.3s ease;
       }
 
       ha-icon {
@@ -59,11 +54,12 @@ class SystemeChauffageCard extends HTMLElement {
       .grid {
         display: flex;
         flex-wrap: wrap;
-        gap: 16px;
+        gap: 10px;
         margin-top: 16px;
       }
 
       .box {
+        width: max-content;
         min-width: 120px;
         box-sizing: border-box;
       }
@@ -74,23 +70,14 @@ class SystemeChauffageCard extends HTMLElement {
       }
 
       .value {
-        display: flex;
-        align-items: center;
         margin-top: 5px;
         font-size: 22px;
         font-weight: 400;
       }
 
       .unit {
-        margin-left: 4px;
         font-size: 14px;
         color: var(--secondary-text-color, #999999);
-      }
-
-      .message {
-        margin-top: 16px;
-        color: var(--secondary-text-color, #999999);
-        font-size: 14px;
       }
 
     `;
@@ -98,33 +85,40 @@ class SystemeChauffageCard extends HTMLElement {
     this.shadowRoot.appendChild(style);
   }
 
-
   // ==========================================================
   // CONFIGURATION
   // ==========================================================
 
   setConfig(config) {
 
-    this.config = config || {};
+    if (!config || !config.piece) {
+      throw new Error(
+        "systeme-chauffage-card : veuillez sélectionner une pièce."
+      );
+    }
 
-    /*
-     * La seule configuration nécessaire est :
-     *
-     * type: custom:systeme-chauffage-card
-     * area: bureau
-     *
-     * Aucun entity_xxx.
-     * Aucun calcul.
-     * Aucun éditeur.
-     */
-
-    this.render();
+    this.config = config;
 
     if (this._hass) {
-      this._loadAreaEntities();
+      this.render();
     }
   }
 
+  // ==========================================================
+  // ÉDITEUR GRAPHIQUE
+  // ==========================================================
+
+  static getConfigElement() {
+    return document.createElement(
+      "systeme-chauffage-card-editor"
+    );
+  }
+
+  static getStubConfig() {
+    return {
+      piece: ""
+    };
+  }
 
   // ==========================================================
   // HASS
@@ -134,93 +128,14 @@ class SystemeChauffageCard extends HTMLElement {
 
     this._hass = hass;
 
-    if (!this.config) {
-      return;
+    if (this.config) {
+      this.render();
     }
-
-    /*
-     * On charge le registre une seule fois.
-     *
-     * Il ne faut surtout pas refaire une requête à chaque
-     * changement d'état d'une entité.
-     */
-
-    if (!this._entities.length && !this._loading) {
-      this._loadAreaEntities();
-    }
-
-    this.render();
   }
-
 
   get hass() {
     return this._hass;
   }
-
-
-  // ==========================================================
-  // RÉCUPÉRATION DU REGISTRE DES ENTITÉS
-  // ==========================================================
-
-  async _loadAreaEntities() {
-
-    if (!this._hass) {
-      return;
-    }
-
-    if (!this.config?.area) {
-      return;
-    }
-
-    if (this._loading) {
-      return;
-    }
-
-    this._loading = true;
-
-    try {
-
-      /*
-       * Demande à Home Assistant le registre complet
-       * des entités.
-       */
-
-      const entities =
-        await this._hass.callWS({
-          type: "config/entity_registry/list"
-        });
-
-
-      /*
-       * On garde uniquement les entités appartenant
-       * à la pièce configurée.
-       */
-
-      this._entities = entities.filter(
-        (entity) =>
-          entity.area_id === this.config.area
-      );
-
-
-      this.render();
-
-    } catch (error) {
-
-      console.error(
-        "systeme-chauffage-card : impossible de récupérer le registre des entités",
-        error
-      );
-
-      this._entities = [];
-
-      this.render();
-
-    } finally {
-
-      this._loading = false;
-    }
-  }
-
 
   // ==========================================================
   // RÉCUPÉRATION D'UNE ENTITÉ
@@ -228,129 +143,81 @@ class SystemeChauffageCard extends HTMLElement {
 
   _getState(entityId) {
 
-    const stateObj =
-      this._hass?.states?.[entityId];
+    if (!entityId) {
+      return "--";
+    }
+
+    const stateObj = this._hass?.states?.[entityId];
 
     if (!stateObj) {
-
-      return {
-        state: "--",
-        unit: ""
-      };
-
+      return "--";
     }
+
+    return stateObj.state;
+  }
+
+  // ==========================================================
+  // NOM AFFICHÉ DE LA PIÈCE
+  // ==========================================================
+
+  _getRoomName() {
+
+    const room = SystemeChauffageCard.ROOMS.find(
+      item => item.id === this.config.piece
+    );
+
+    return room ? room.name : this.config.piece;
+  }
+
+  // ==========================================================
+  // CONSTRUCTION AUTOMATIQUE DES ENTITÉS
+  // ==========================================================
+
+  _getEntities() {
+
+    const piece = this.config.piece;
 
     return {
 
-      state: stateObj.state,
+      coefficient:
+        `number.coefficient_${piece}`,
 
-      unit:
-        stateObj.attributes?.unit_of_measurement || ""
+      derive:
+        `sensor.derive_${piece}`,
+
+      heureAnticipee:
+        `sensor.heure_anticipee_${piece}`,
+
+      heurePlanning:
+        `sensor.heure_planning_${piece}`,
+
+      heurePlanningPrecedent:
+        `sensor.heure_planning_precedent_${piece}`,
+
+      tempsChauffe:
+        `sensor.temps_de_chauffe_${piece}`
 
     };
   }
 
-
   // ==========================================================
-  // NOM AFFICHÉ
+  // COULEUR DE L'ICÔNE
   // ==========================================================
 
-  _getName(entity) {
+  _getIconColor() {
 
-    const stateObj =
-      this._hass?.states?.[entity.entity_id];
+    const entities = this._getEntities();
 
     /*
-     * Le friendly_name est prioritaire.
+     * Pour l'instant on regarde l'état du chauffage
+     * uniquement si une entité correspondante existe.
      *
-     * Si aucune valeur n'est disponible,
-     * on utilise le nom original du registre.
+     * Comme tu ne m'as pas donné d'entité d'état dans ta liste,
+     * l'icône reste grise.
      */
-
-    return (
-      stateObj?.attributes?.friendly_name ||
-      entity.name ||
-      entity.entity_id
-    );
-  }
-
-
-  // ==========================================================
-  // ICÔNE
-  // ==========================================================
-
-  _getIcon(entity) {
-
-    const stateObj =
-      this._hass?.states?.[entity.entity_id];
-
-    if (stateObj?.attributes?.icon) {
-      return stateObj.attributes.icon;
-    }
-
-    const domain =
-      entity.entity_id.split(".")[0];
-
-    switch (domain) {
-
-      case "climate":
-        return "mdi:radiator";
-
-      case "sensor":
-        return "mdi:gauge";
-
-      case "binary_sensor":
-        return "mdi:checkbox-marked-circle-outline";
-
-      case "switch":
-        return "mdi:toggle-switch";
-
-      case "light":
-        return "mdi:lightbulb";
-
-      case "fan":
-        return "mdi:fan";
-
-      case "input_number":
-        return "mdi:numeric";
-
-      case "input_text":
-        return "mdi:form-textbox";
-
-      default:
-        return "mdi:home-assistant";
-    }
-  }
-
-
-  // ==========================================================
-  // COULEUR ICÔNE
-  // ==========================================================
-
-  _getIconColor(entity) {
-
-    const stateObj =
-      this._hass?.states?.[entity.entity_id];
-
-    if (!stateObj) {
-      return "var(--secondary-text-color, #999999)";
-    }
-
-    const state =
-      stateObj.state;
-
-    if (
-      state === "on" ||
-      state === "heat" ||
-      state === "heating"
-    ) {
-
-      return "#ff9800";
-    }
 
     return "var(--secondary-text-color, #999999)";
   }
-
 
   // ==========================================================
   // RENDU
@@ -358,231 +225,128 @@ class SystemeChauffageCard extends HTMLElement {
 
   render() {
 
-    if (!this.config) {
+    if (!this._hass || !this.config?.piece) {
       return;
     }
+
+    const entities = this._getEntities();
+    const roomName = this._getRoomName();
+    const iconColor = this._getIconColor();
+
+    const coefficient =
+      this._getState(entities.coefficient);
+
+    const derive =
+      this._getState(entities.derive);
+
+    const heureAnticipee =
+      this._getState(entities.heureAnticipee);
+
+    const heurePlanning =
+      this._getState(entities.heurePlanning);
+
+    const heurePlanningPrecedent =
+      this._getState(entities.heurePlanningPrecedent);
+
+    const tempsChauffe =
+      this._getState(entities.tempsChauffe);
 
     let container =
       this.shadowRoot.querySelector(".card");
 
     if (!container) {
 
-      container =
-        document.createElement("div");
+      container = document.createElement("div");
 
       container.className = "card";
 
       this.shadowRoot.appendChild(container);
     }
 
-
-    // --------------------------------------------------------
-    // PAS DE PIÈCE
-    // --------------------------------------------------------
-
-    if (!this.config.area) {
-
-      container.innerHTML = `
-
-        <div class="header">
-
-          <div class="title">
-            Chauffage
-          </div>
-
-          <div class="icon">
-            <ha-icon
-              icon="mdi:home-thermometer"
-            ></ha-icon>
-          </div>
-
-        </div>
-
-        <div class="message">
-          Aucune pièce configurée.
-        </div>
-
-      `;
-
-      return;
-    }
-
-
-    // --------------------------------------------------------
-    // ENTÊTE
-    // --------------------------------------------------------
-
-    let title =
-      this.config.area;
-
-
-    // --------------------------------------------------------
-    // ENTITÉS
-    // --------------------------------------------------------
-
-    if (this._loading && !this._entities.length) {
-
-      container.innerHTML = `
-
-        <div class="header">
-
-          <div class="title">
-            ${title}
-          </div>
-
-          <div class="icon">
-            <ha-icon
-              icon="mdi:home-thermometer"
-            ></ha-icon>
-          </div>
-
-        </div>
-
-        <div class="message">
-          Chargement des entités...
-        </div>
-
-      `;
-
-      return;
-    }
-
-
-    if (!this._entities.length) {
-
-      container.innerHTML = `
-
-        <div class="header">
-
-          <div class="title">
-            ${title}
-          </div>
-
-          <div class="icon">
-            <ha-icon
-              icon="mdi:home-thermometer"
-            ></ha-icon>
-          </div>
-
-        </div>
-
-        <div class="message">
-          Aucune entité trouvée dans cette pièce.
-        </div>
-
-      `;
-
-      return;
-    }
-
-
-    // --------------------------------------------------------
-    // TRI
-    // --------------------------------------------------------
-
-    const entities =
-      [...this._entities].sort(
-        (a, b) =>
-          this._getName(a).localeCompare(
-            this._getName(b),
-            "fr",
-            {
-              sensitivity: "base"
-            }
-          )
-      );
-
-
-    // --------------------------------------------------------
-    // BOX
-    // --------------------------------------------------------
-
-    const boxesHtml =
-      entities.map((entity) => {
-
-        const data =
-          this._getState(entity.entity_id);
-
-        const name =
-          this._getName(entity);
-
-        const icon =
-          this._getIcon(entity);
-
-        const color =
-          this._getIconColor(entity);
-
-
-        return `
-
-          <div class="box">
-
-            <div class="label">
-              ${name}
-            </div>
-
-            <div class="value">
-
-              <ha-icon
-                icon="${icon}"
-                style="
-                  color: ${color};
-                  margin-right: 6px;
-                "
-              ></ha-icon>
-
-              <span>
-                ${data.state}
-              </span>
-
-              ${
-                data.unit
-                  ? `
-                    <span class="unit">
-                      ${data.unit}
-                    </span>
-                  `
-                  : ""
-              }
-
-            </div>
-
-          </div>
-
-        `;
-
-      }).join("");
-
-
-    // --------------------------------------------------------
-    // AFFICHAGE
-    // --------------------------------------------------------
-
     container.innerHTML = `
 
       <div class="header">
 
         <div class="title">
-          ${title}
+          Chauffage — ${roomName}
         </div>
 
-        <div class="icon">
-          <ha-icon
-            icon="mdi:home-thermometer"
-          ></ha-icon>
+        <div
+          class="icon"
+          style="color: ${iconColor};"
+        >
+          <ha-icon icon="mdi:fire"></ha-icon>
         </div>
 
       </div>
 
       <div class="grid">
 
-        ${boxesHtml}
+        <div class="box">
+          <div class="label">
+            Coefficient
+          </div>
+
+          <div class="value">
+            <span>${coefficient}</span>
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="label">
+            Dérive
+          </div>
+
+          <div class="value">
+            <span>${derive}</span>
+            <span class="unit">°C/Min</span>
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="label">
+            Heure anticipée
+          </div>
+
+          <div class="value">
+            <span>${heureAnticipee}</span>
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="label">
+            Heure planning
+          </div>
+
+          <div class="value">
+            <span>${heurePlanning}</span>
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="label">
+            Planning précédent
+          </div>
+
+          <div class="value">
+            <span>${heurePlanningPrecedent}</span>
+          </div>
+        </div>
+
+        <div class="box">
+          <div class="label">
+            Temps de chauffe
+          </div>
+
+          <div class="value">
+            <span>${tempsChauffe}</span>
+            <span class="unit">Min</span>
+          </div>
+        </div>
 
       </div>
-
     `;
   }
-
 
   // ==========================================================
   // TAILLE
@@ -594,9 +358,270 @@ class SystemeChauffageCard extends HTMLElement {
 }
 
 
-// =============================================================
+// ==============================================================
+// PIÈCES DISPONIBLES
+// ==============================================================
+//
+// IMPORTANT :
+// Le "id" doit correspondre EXACTEMENT au suffixe utilisé
+// dans les noms de tes entités.
+//
+// Exemple :
+// id = bureau_salle_de_jeux
+//
+// donnera automatiquement :
+// number.coefficient_bureau_salle_de_jeux
+// sensor.derive_bureau_salle_de_jeux
+// etc.
+//
+// Ajoute simplement tes autres pièces ici.
+// ==============================================================
+
+SystemeChauffageCard.ROOMS = [
+
+  {
+    id: "bureau_salle_de_jeux",
+    name: "Bureau salle de jeux"
+  },
+
+  {
+    id: "salon",
+    name: "Salon"
+  },
+
+  {
+    id: "chambre",
+    name: "Chambre"
+  }
+
+];
+
+
+// ==============================================================
+// ÉDITEUR GRAPHIQUE
+// ==============================================================
+
+class SystemeChauffageCardEditor extends HTMLElement {
+
+  constructor() {
+
+    super();
+
+    this.attachShadow({
+      mode: "open"
+    });
+
+    this._built = false;
+  }
+
+
+  // ==========================================================
+  // CONFIG
+  // ==========================================================
+
+  setConfig(config) {
+
+    this._config = {
+      ...(config || {})
+    };
+
+    if (!this._built) {
+      this._buildForm();
+    }
+
+    this._updateSelector();
+  }
+
+
+  // ==========================================================
+  // HASS
+  // ==========================================================
+
+  set hass(hass) {
+
+    this._hass = hass;
+
+    if (!this._built) {
+      this._buildForm();
+    }
+
+    this._updateSelector();
+  }
+
+
+  get hass() {
+    return this._hass;
+  }
+
+
+  // ==========================================================
+  // CONSTRUCTION DU FORMULAIRE
+  // ==========================================================
+
+  _buildForm() {
+
+    this.shadowRoot.innerHTML = `
+
+      <style>
+
+        .container {
+          padding: 4px 0 12px 0;
+        }
+
+        .label {
+          font-size: 13px;
+          color: var(
+            --secondary-text-color,
+            #999999
+          );
+
+          margin-bottom: 6px;
+        }
+
+        ha-select {
+          width: 100%;
+        }
+
+      </style>
+
+      <div class="container">
+
+        <div class="label">
+          Pièce
+        </div>
+
+        <ha-select
+          id="piece"
+          label="Sélectionner une pièce"
+        >
+        </ha-select>
+
+      </div>
+
+    `;
+
+    const selector =
+      this.shadowRoot.querySelector("#piece");
+
+    selector.addEventListener(
+      "selected-changed",
+      (event) => {
+
+        const value =
+          event.detail.value;
+
+        if (!value) {
+          return;
+        }
+
+        this._updateConfig(value);
+      }
+    );
+
+    this._built = true;
+  }
+
+
+  // ==========================================================
+  // REMPLISSAGE DU MENU
+  // ==========================================================
+
+  _updateSelector() {
+
+    if (!this._built) {
+      return;
+    }
+
+    const selector =
+      this.shadowRoot.querySelector("#piece");
+
+    if (!selector) {
+      return;
+    }
+
+    /*
+     * On ne reconstruit pas le sélecteur à chaque changement
+     * de hass.
+     */
+
+    if (!selector.__optionsBuilt) {
+
+      selector.innerHTML = "";
+
+      SystemeChauffageCard.ROOMS.forEach(
+        (room) => {
+
+          const option =
+            document.createElement(
+              "mwc-list-item"
+            );
+
+          option.value = room.id;
+          option.textContent = room.name;
+
+          selector.appendChild(option);
+        }
+      );
+
+      selector.__optionsBuilt = true;
+    }
+
+    const value =
+      this._config?.piece || "";
+
+    if (selector.value !== value) {
+      selector.value = value;
+    }
+  }
+
+
+  // ==========================================================
+  // MISE À JOUR DE LA CONFIG
+  // ==========================================================
+
+  _updateConfig(piece) {
+
+    this._config = {
+      ...this._config,
+      piece
+    };
+
+    this.dispatchEvent(
+      new CustomEvent(
+        "config-changed",
+        {
+          detail: {
+            config: this._config
+          },
+          bubbles: true,
+          composed: true
+        }
+      )
+    );
+  }
+}
+
+
+// ==============================================================
+// ENREGISTREMENT DE L'ÉDITEUR
+// ==============================================================
+
+if (
+  !customElements.get(
+    "systeme-chauffage-card-editor"
+  )
+) {
+
+  customElements.define(
+    "systeme-chauffage-card-editor",
+    SystemeChauffageCardEditor
+  );
+}
+
+
+// ==============================================================
 // ENREGISTREMENT DE LA CARTE
-// =============================================================
+// ==============================================================
 
 if (
   !customElements.get(
@@ -611,9 +636,9 @@ if (
 }
 
 
-// =============================================================
+// ==============================================================
 // DÉCLARATION HOME ASSISTANT
-// =============================================================
+// ==============================================================
 
 window.customCards =
   window.customCards || [];
@@ -621,7 +646,7 @@ window.customCards =
 
 if (
   !window.customCards.some(
-    (card) =>
+    card =>
       card.type ===
       "systeme-chauffage-card"
   )
@@ -636,10 +661,9 @@ if (
       "Système de chauffage",
 
     description:
-      "Affiche automatiquement les entités d'une pièce",
+      "Affiche automatiquement les informations de chauffage d'une pièce.",
 
     preview:
       true
-
   });
 }
