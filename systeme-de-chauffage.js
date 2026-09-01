@@ -409,113 +409,259 @@ class SystemeChauffageCard extends HTMLElement {
 // plus bas.
 // ==============================================================
 SystemeChauffageCard.FIELDS = [
-  { key: "entity_temp_ext",        label: "Température extérieure",   unit: "°C", required: true,  domain: "sensor" },
-  { key: "entity_temp_int",        label: "Température intérieure",   unit: "°C", required: true,  domain: "sensor" },
-  { key: "entity_consigne",        label: "Consigne",                 unit: "°C", required: true,  domain: "climate", attribute: "temperature" },
-  { key: "entity_coefficient",     label: "Coefficient",              unit: "",   required: true,  domain: "input_number" },
-  { key: "entity_heure_anticipee", label: "Heure anticipée",          unit: "H",  required: false },
-  { key: "entity_heure_precedent", label: "Heure planning précédent", unit: "H",  required: false },
-  { key: "entity_heure_planning",  label: "Heure planning",           unit: "H",  required: false },
-  { key: "entity_planning",        label: "Planning en cours",        unit: "",   required: false },
-  { key: "entity_derive",          label: "Dérive",                   unit: "°C/Min", required: false },
-  { key: "entity_etat",            label: "État du chauffage",        unit: "",   required: true,  domain: "climate", isState: true },
+  { key: "entity_temp_ext",    label: "Température extérieure", unit: "°C", required: true,  domain: "sensor" },
+  { key: "entity_temp_int",    label: "Température intérieure", unit: "°C", required: true,  domain: "sensor" },
+  { key: "entity_consigne",    label: "Consigne",               unit: "°C", required: true,  domain: "climate", attribute: "temperature" },
+  { key: "entity_coefficient", label: "Coefficient",            unit: "",   required: true,  domain: "input_number" },
+  { key: "entity_planning",    label: "Planning en cours",      unit: "",   required: true,  domain: "input_text" },
+  { key: "entity_derive",      label: "Dérive",                 unit: "°C/Min", required: false },
+  { key: "entity_etat",        label: "État du chauffage",      unit: "",   required: true,  domain: "climate", isState: true },
 ];
 
 // ==============================================================
-// CALCULS — valeurs calculées directement par la carte
+// CALC — fonctions de calcul, réutilisables entre elles
 // ==============================================================
 // ⚠️ ZONE À REGARDER EN PRIORITÉ EN CAS DE PROBLÈME SUR UN CALCUL.
 //
-// Contrairement à FIELDS ci-dessus (qui affiche la valeur brute
-// d'une entité HA choisie dans l'éditeur), chaque entrée ici est
-// calculée EN JAVASCRIPT, directement dans la carte, à partir des
-// entités déjà sélectionnées dans FIELDS (donc pas besoin de créer
-// un template sensor / helper séparé dans Home Assistant).
+// Chaque fonction ci-dessous correspond à un template Jinja2 que
+// tu utilisais côté Home Assistant, traduit en JavaScript. Elles
+// sont regroupées ici (plutôt que directement dans CALCULATIONS
+// plus bas) parce que certaines s'appellent entre elles :
+// "heureAnticipee" a par exemple besoin du résultat de
+// "heurePlanning" ET de "tempsChauffe". Les séparer permet de
+// réutiliser un calcul sans dupliquer sa logique.
 //
-// Comme render() est rappelé automatiquement à chaque mise à jour
-// de hass, le calcul est refait et la valeur affichée se met à
-// jour toute seule — pas de logique de rafraîchissement en plus
-// à écrire.
-//
-// Chaque entrée :
-//   - key      : identifiant interne (non utilisé pour l'instant,
-//                utile si tu veux retrouver un calcul par code)
-//   - label    : texte affiché
-//   - unit     : unité affichée
-//   - compute(config, hass) : fonction qui renvoie la valeur
-//                calculée, ou null si les données ne sont pas
-//                encore disponibles (hass pas encore chargé, etc.)
-//
-// Pour ajouter un futur calcul (dérive, heure anticipée, etc.),
-// ajoute simplement une nouvelle entrée dans ce tableau, sur le
-// même modèle que "temps_chauffe" ci-dessous.
+// Toutes prennent (config, hass) et renvoient soit une valeur,
+// soit null si hass n'est pas encore prêt.
 // ==============================================================
-SystemeChauffageCard.CALCULATIONS = [
-  {
-    key: "temps_chauffe",
-    label: "Temps de chauffe",
-    unit: "Min",
+SystemeChauffageCard.CALC = {
 
-    // ------------------------------------------------------
-    // CALCUL DU TEMPS DE CHAUFFE ESTIMÉ (en minutes)
-    // ------------------------------------------------------
-    // Traduction directe du template Jinja2 :
-    //
-    //   temp        = température intérieure actuelle
-    //   consigne    = température cible (attribut "temperature"
-    //                 de l'entité climate)
-    //   delta       = consigne - temp
-    //   coeff       = coefficient réglable, borné entre 10 et 60
-    //   facteur_ext = 1 + ((temp - température extérieure) / 50),
-    //                 borné entre 0.7 et 1.5
-    //   résultat    = round(delta * coeff * facteur_ext)
-    //                 mais 0 si delta <= 0.3°C (déjà à température)
-    //
-    // Entités utilisées, toutes définies plus haut dans FIELDS :
-    //   - entity_temp_int    → température intérieure
-    //   - entity_consigne    → consigne (attribut "temperature")
-    //   - entity_coefficient → coefficient réglable (input_number)
-    //   - entity_temp_ext    → température extérieure
-    // ------------------------------------------------------
-    compute(config, hass) {
+  // ------------------------------------------------------
+  // TEMPS DE CHAUFFE ESTIMÉ (en minutes)
+  // ------------------------------------------------------
+  // Traduction directe du template Jinja2 :
+  //   delta       = consigne - température intérieure
+  //   coeff       = coefficient réglable, borné entre 10 et 60
+  //   facteur_ext = 1 + ((temp - température extérieure) / 50),
+  //                 borné entre 0.7 et 1.5
+  //   résultat    = round(delta * coeff * facteur_ext),
+  //                 mais 0 si delta <= 0.3°C (déjà à température)
+  //
+  // Entités utilisées (définies dans FIELDS) :
+  //   entity_temp_int, entity_consigne (attribut "temperature"),
+  //   entity_coefficient, entity_temp_ext
+  // ------------------------------------------------------
+  tempsChauffe(config, hass) {
 
-      // Pas encore de données hass disponibles : on ne calcule pas.
-      if (!hass) return null;
+    if (!hass) return null;
 
-      const temp = parseFloat(hass.states[config.entity_temp_int]?.state) || 0;
+    const temp = parseFloat(hass.states[config.entity_temp_int]?.state) || 0;
 
-      const consigneEntity = hass.states[config.entity_consigne];
-      const consigne = parseFloat(consigneEntity?.attributes?.temperature) || 0;
+    const consigneEntity = hass.states[config.entity_consigne];
+    const consigne = parseFloat(consigneEntity?.attributes?.temperature) || 0;
 
-      const delta = consigne - temp;
+    const delta = consigne - temp;
 
-      // Coefficient réglable, borné entre 10 et 60 (comme dans le
-      // template d'origine : {% if coeff < 10 %}...{% endif %}).
-      let coeff = parseFloat(hass.states[config.entity_coefficient]?.state);
-      if (isNaN(coeff)) coeff = 25; // valeur par défaut si le capteur n'a pas encore de valeur
-      coeff = Math.min(Math.max(coeff, 10), 60);
+    let coeff = parseFloat(hass.states[config.entity_coefficient]?.state);
+    if (isNaN(coeff)) coeff = 25; // valeur par défaut si pas encore disponible
+    coeff = Math.min(Math.max(coeff, 10), 60);
 
-      // Température extérieure, avec une valeur de secours à 10°C
-      // si le capteur n'est pas encore disponible.
-      const extBrut = parseFloat(hass.states[config.entity_temp_ext]?.state);
-      const ext = isNaN(extBrut) ? 10 : extBrut;
+    const extBrut = parseFloat(hass.states[config.entity_temp_ext]?.state);
+    const ext = isNaN(extBrut) ? 10 : extBrut;
 
-      // Facteur d'ajustement selon l'écart avec l'extérieur,
-      // borné entre 0.7 et 1.5.
-      let facteurExt = 1 + ((temp - ext) / 50);
-      facteurExt = Math.min(Math.max(facteurExt, 0.7), 1.5);
+    let facteurExt = 1 + ((temp - ext) / 50);
+    facteurExt = Math.min(Math.max(facteurExt, 0.7), 1.5);
 
-      // En dessous de 0.3°C d'écart, on considère qu'on est déjà
-      // à température : pas besoin de chauffer.
-      if (delta > 0.3) {
-        return Math.round(delta * coeff * facteurExt);
-      }
+    if (delta > 0.3) {
+      return Math.round(delta * coeff * facteurExt);
+    }
 
-      return 0;
-
-    },
+    return 0;
 
   },
+
+  // ------------------------------------------------------
+  // HEURE PLANNING (prochain créneau à venir)
+  // ------------------------------------------------------
+  // Traduction du template Jinja2 : parcourt le planning
+  // (entity_planning, format "07h30|21,12h00|19,..."), et renvoie
+  // le premier créneau dont l'heure est APRÈS l'heure actuelle.
+  // S'il n'y en a aucun (on est après le dernier créneau du jour),
+  // on revient au tout premier créneau de la liste — comportement
+  // identique au template d'origine.
+  // ------------------------------------------------------
+  heurePlanning(config, hass) {
+
+    if (!hass) return null;
+
+    const planning = hass.states[config.entity_planning]?.state;
+
+    if (!planning || ["unknown", "unavailable", "none", ""].includes(planning)) {
+      return "unknown";
+    }
+
+    const maintenant = SystemeChauffageCard._nowHHMM();
+    let resultat = null;
+
+    for (const item of planning.split(",")) {
+      if (item.includes("|")) {
+
+        const [hBrut, mBrut] = item.split("|");
+        const h = (hBrut || "").trim();
+        const m = (mBrut || "").trim();
+
+        // On garde le PREMIER créneau trouvé après maintenant
+        // (résultat === null évite d'écraser une trouvaille précédente).
+        if (h > maintenant && resultat === null) {
+          resultat = `${h}|${m}`;
+        }
+
+      }
+    }
+
+    if (resultat === null) {
+      return planning.split(",")[0].trim();
+    }
+
+    return resultat;
+
+  },
+
+  // ------------------------------------------------------
+  // HEURE PLANNING PRÉCÉDENT (dernier créneau déjà passé)
+  // ------------------------------------------------------
+  // Même logique que ci-dessus, mais on garde le DERNIER créneau
+  // dont l'heure est déjà passée (<=  maintenant) — donc on ne
+  // s'arrête pas au premier trouvé, contrairement à heurePlanning.
+  // Si aucun n'est encore passé, on revient au DERNIER créneau
+  // de la liste (fin de journée précédente).
+  // ------------------------------------------------------
+  heurePlanningPrecedent(config, hass) {
+
+    if (!hass) return null;
+
+    const planning = hass.states[config.entity_planning]?.state;
+
+    if (!planning || ["unknown", "unavailable", "none", ""].includes(planning)) {
+      return "unknown";
+    }
+
+    const maintenant = SystemeChauffageCard._nowHHMM();
+    let resultat = null;
+
+    for (const item of planning.split(",")) {
+      if (item.includes("|")) {
+
+        const [hBrut, mBrut] = item.split("|");
+        const h = (hBrut || "").trim();
+        const m = (mBrut || "").trim();
+
+        // Ici on écrase à chaque créneau passé trouvé : on veut
+        // le DERNIER, pas le premier (pas de "resultat === null").
+        if (h <= maintenant) {
+          resultat = `${h}|${m}`;
+        }
+
+      }
+    }
+
+    if (resultat === null) {
+      const items = planning.split(",");
+      return items[items.length - 1].trim();
+    }
+
+    return resultat;
+
+  },
+
+  // ------------------------------------------------------
+  // HEURE ANTICIPÉE (heure de démarrage du chauffage)
+  // ------------------------------------------------------
+  // Traduction du template Jinja2. Utilise directement les
+  // résultats de heurePlanning() et tempsChauffe() ci-dessus au
+  // lieu de relire sensor.heure_planning_chauffage_bureau et
+  // sensor.capteur_temps_de_chauffe_bureau : ce sont exactement
+  // les mêmes valeurs, maintenant calculées ici même.
+  //
+  // ⚠️ DIFFÉRENCE VOLONTAIRE avec le template Jinja d'origine :
+  // dans le template, `strptime(cible_ok, '%H:%M')` crée un
+  // datetime SANS date (année 1900 par défaut), donc la comparaison
+  // `d < now()` était TOUJOURS vraie (1900 < aujourd'hui) — la
+  // branche "sinon" n'était donc jamais réellement atteinte en
+  // pratique. Ici, on construit `d` avec la date d'AUJOURD'HUI,
+  // pour que la comparaison ait un sens réel. Dis-moi si tu
+  // préfères qu'on reproduise exactement l'ancien comportement.
+  // ------------------------------------------------------
+  heureAnticipee(config, hass) {
+
+    if (!hass) return null;
+
+    const planning = SystemeChauffageCard.CALC.heurePlanning(config, hass);
+    const cible = (planning || "").split("|")[0];
+
+    if (!cible || ["unknown", "unavailable", "none", ""].includes(cible)) {
+      return cible || "--";
+    }
+
+    // "07h30" → "07:30"
+    const cibleOk = cible.replace("h", ":").substring(0, 5);
+
+    const besoin = SystemeChauffageCard.CALC.tempsChauffe(config, hass);
+
+    if (besoin !== null && besoin > 0 && besoin < 180) {
+
+      const [hh, mm] = cibleOk.split(":").map(Number);
+      if (isNaN(hh) || isNaN(mm)) return cibleOk;
+
+      const maintenant = new Date();
+      const cibleDate = new Date(
+        maintenant.getFullYear(),
+        maintenant.getMonth(),
+        maintenant.getDate(),
+        hh,
+        mm
+      );
+
+      const d = new Date(cibleDate.getTime() - besoin * 60000);
+
+      if (d < maintenant) {
+        return SystemeChauffageCard._nowHHMM();
+      }
+
+      return SystemeChauffageCard._formatHHMM(d);
+
+    }
+
+    return cibleOk;
+
+  },
+
+};
+
+// Petits utilitaires de formatage d'heure, partagés par les
+// calculs ci-dessus (évite de dupliquer le padStart partout).
+SystemeChauffageCard._nowHHMM = function () {
+  return SystemeChauffageCard._formatHHMM(new Date());
+};
+
+SystemeChauffageCard._formatHHMM = function (date) {
+  const hh = String(date.getHours()).padStart(2, "0");
+  const mm = String(date.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+};
+
+// ==============================================================
+// CALCULATIONS — ce qui s'affiche dans la carte
+// ==============================================================
+// Fait le lien entre les fonctions de CALC ci-dessus et leur
+// affichage (label, unité). Pour ajouter un futur calcul, ajoute
+// sa fonction dans CALC, puis une ligne ici.
+// ==============================================================
+SystemeChauffageCard.CALCULATIONS = [
+  { key: "temps_chauffe",            label: "Temps de chauffe",         unit: "Min", compute: SystemeChauffageCard.CALC.tempsChauffe },
+  { key: "heure_planning",           label: "Heure planning",           unit: "H",   compute: SystemeChauffageCard.CALC.heurePlanning },
+  { key: "heure_planning_precedent", label: "Heure planning précédent", unit: "H",   compute: SystemeChauffageCard.CALC.heurePlanningPrecedent },
+  { key: "heure_anticipee",          label: "Heure anticipée",          unit: "H",   compute: SystemeChauffageCard.CALC.heureAnticipee },
 ];
 
 // ==============================================================
