@@ -80,10 +80,15 @@ class SystemeChauffageCard extends HTMLElement {
         color: var(--secondary-text-color, #999999);
       }
 
+      .missing {
+        opacity: 0.5;
+      }
+
     `;
 
     this.shadowRoot.appendChild(style);
   }
+
 
   // ==========================================================
   // CONFIGURATION
@@ -91,7 +96,7 @@ class SystemeChauffageCard extends HTMLElement {
 
   setConfig(config) {
 
-    if (!config || !config.piece) {
+    if (!config || !config.area) {
       throw new Error(
         "systeme-chauffage-card : veuillez sélectionner une pièce."
       );
@@ -104,6 +109,7 @@ class SystemeChauffageCard extends HTMLElement {
     }
   }
 
+
   // ==========================================================
   // ÉDITEUR GRAPHIQUE
   // ==========================================================
@@ -114,11 +120,11 @@ class SystemeChauffageCard extends HTMLElement {
     );
   }
 
+
   static getStubConfig() {
-    return {
-      piece: ""
-    };
+    return {};
   }
+
 
   // ==========================================================
   // HASS
@@ -133,9 +139,11 @@ class SystemeChauffageCard extends HTMLElement {
     }
   }
 
+
   get hass() {
     return this._hass;
   }
+
 
   // ==========================================================
   // RÉCUPÉRATION D'UNE ENTITÉ
@@ -147,7 +155,8 @@ class SystemeChauffageCard extends HTMLElement {
       return "--";
     }
 
-    const stateObj = this._hass?.states?.[entityId];
+    const stateObj =
+      this._hass?.states?.[entityId];
 
     if (!stateObj) {
       return "--";
@@ -156,68 +165,71 @@ class SystemeChauffageCard extends HTMLElement {
     return stateObj.state;
   }
 
+
   // ==========================================================
-  // NOM AFFICHÉ DE LA PIÈCE
+  // NOM DE LA ZONE
   // ==========================================================
 
-  _getRoomName() {
+  _getAreaName() {
 
-    const room = SystemeChauffageCard.ROOMS.find(
-      item => item.id === this.config.piece
-    );
+    const areaId = this.config.area;
 
-    return room ? room.name : this.config.piece;
+    /*
+     * Home Assistant expose normalement les zones dans
+     * hass.areas lorsqu'elles sont disponibles dans le
+     * contexte de la carte.
+     */
+
+    if (
+      this._hass?.areas &&
+      this._hass.areas[areaId]
+    ) {
+      return (
+        this._hass.areas[areaId].name ||
+        areaId
+      );
+    }
+
+    /*
+     * Si hass.areas n'est pas disponible, on utilise
+     * simplement l'identifiant de la zone.
+     */
+
+    return areaId;
   }
 
+
   // ==========================================================
-  // CONSTRUCTION AUTOMATIQUE DES ENTITÉS
+  // ENTITÉS AUTOMATIQUES
   // ==========================================================
 
   _getEntities() {
 
-    const piece = this.config.piece;
+    const area = this.config.area;
 
     return {
 
       coefficient:
-        `number.coefficient_${piece}`,
+        `number.coefficient_${area}`,
 
       derive:
-        `sensor.derive_${piece}`,
+        `sensor.derive_${area}`,
 
       heureAnticipee:
-        `sensor.heure_anticipee_${piece}`,
+        `sensor.heure_anticipee_${area}`,
 
       heurePlanning:
-        `sensor.heure_planning_${piece}`,
+        `sensor.heure_planning_${area}`,
 
       heurePlanningPrecedent:
-        `sensor.heure_planning_precedent_${piece}`,
+        `sensor.heure_planning_precedent_${area}`,
 
       tempsChauffe:
-        `sensor.temps_de_chauffe_${piece}`
+        `sensor.temps_de_chauffe_${area}`
 
     };
   }
 
-  // ==========================================================
-  // COULEUR DE L'ICÔNE
-  // ==========================================================
-
-  _getIconColor() {
-
-    const entities = this._getEntities();
-
-    /*
-     * Pour l'instant on regarde l'état du chauffage
-     * uniquement si une entité correspondante existe.
-     *
-     * Comme tu ne m'as pas donné d'entité d'état dans ta liste,
-     * l'icône reste grise.
-     */
-
-    return "var(--secondary-text-color, #999999)";
-  }
 
   // ==========================================================
   // RENDU
@@ -225,60 +237,78 @@ class SystemeChauffageCard extends HTMLElement {
 
   render() {
 
-    if (!this._hass || !this.config?.piece) {
+    if (!this._hass || !this.config?.area) {
       return;
     }
 
-    const entities = this._getEntities();
-    const roomName = this._getRoomName();
-    const iconColor = this._getIconColor();
+    const entities =
+      this._getEntities();
+
+    const areaName =
+      this._getAreaName();
 
     const coefficient =
-      this._getState(entities.coefficient);
+      this._getState(
+        entities.coefficient
+      );
 
     const derive =
-      this._getState(entities.derive);
+      this._getState(
+        entities.derive
+      );
 
     const heureAnticipee =
-      this._getState(entities.heureAnticipee);
+      this._getState(
+        entities.heureAnticipee
+      );
 
     const heurePlanning =
-      this._getState(entities.heurePlanning);
+      this._getState(
+        entities.heurePlanning
+      );
 
     const heurePlanningPrecedent =
-      this._getState(entities.heurePlanningPrecedent);
+      this._getState(
+        entities.heurePlanningPrecedent
+      );
 
     const tempsChauffe =
-      this._getState(entities.tempsChauffe);
+      this._getState(
+        entities.tempsChauffe
+      );
+
 
     let container =
       this.shadowRoot.querySelector(".card");
 
+
     if (!container) {
 
-      container = document.createElement("div");
+      container =
+        document.createElement("div");
 
       container.className = "card";
 
-      this.shadowRoot.appendChild(container);
+      this.shadowRoot.appendChild(
+        container
+      );
     }
+
 
     container.innerHTML = `
 
       <div class="header">
 
         <div class="title">
-          Chauffage — ${roomName}
+          Chauffage — ${areaName}
         </div>
 
-        <div
-          class="icon"
-          style="color: ${iconColor};"
-        >
+        <div class="icon">
           <ha-icon icon="mdi:fire"></ha-icon>
         </div>
 
       </div>
+
 
       <div class="grid">
 
@@ -288,9 +318,10 @@ class SystemeChauffageCard extends HTMLElement {
           </div>
 
           <div class="value">
-            <span>${coefficient}</span>
+            ${coefficient}
           </div>
         </div>
+
 
         <div class="box">
           <div class="label">
@@ -298,10 +329,13 @@ class SystemeChauffageCard extends HTMLElement {
           </div>
 
           <div class="value">
-            <span>${derive}</span>
-            <span class="unit">°C/Min</span>
+            ${derive}
+            <span class="unit">
+              °C/Min
+            </span>
           </div>
         </div>
+
 
         <div class="box">
           <div class="label">
@@ -309,9 +343,10 @@ class SystemeChauffageCard extends HTMLElement {
           </div>
 
           <div class="value">
-            <span>${heureAnticipee}</span>
+            ${heureAnticipee}
           </div>
         </div>
+
 
         <div class="box">
           <div class="label">
@@ -319,9 +354,10 @@ class SystemeChauffageCard extends HTMLElement {
           </div>
 
           <div class="value">
-            <span>${heurePlanning}</span>
+            ${heurePlanning}
           </div>
         </div>
+
 
         <div class="box">
           <div class="label">
@@ -329,9 +365,10 @@ class SystemeChauffageCard extends HTMLElement {
           </div>
 
           <div class="value">
-            <span>${heurePlanningPrecedent}</span>
+            ${heurePlanningPrecedent}
           </div>
         </div>
+
 
         <div class="box">
           <div class="label">
@@ -339,14 +376,17 @@ class SystemeChauffageCard extends HTMLElement {
           </div>
 
           <div class="value">
-            <span>${tempsChauffe}</span>
-            <span class="unit">Min</span>
+            ${tempsChauffe}
+            <span class="unit">
+              Min
+            </span>
           </div>
         </div>
 
       </div>
     `;
   }
+
 
   // ==========================================================
   // TAILLE
@@ -358,48 +398,10 @@ class SystemeChauffageCard extends HTMLElement {
 }
 
 
-// ==============================================================
-// PIÈCES DISPONIBLES
-// ==============================================================
-//
-// IMPORTANT :
-// Le "id" doit correspondre EXACTEMENT au suffixe utilisé
-// dans les noms de tes entités.
-//
-// Exemple :
-// id = bureau_salle_de_jeux
-//
-// donnera automatiquement :
-// number.coefficient_bureau_salle_de_jeux
-// sensor.derive_bureau_salle_de_jeux
-// etc.
-//
-// Ajoute simplement tes autres pièces ici.
-// ==============================================================
 
-SystemeChauffageCard.ROOMS = [
-
-  {
-    id: "bureau_salle_de_jeux",
-    name: "Bureau salle de jeux"
-  },
-
-  {
-    id: "salon",
-    name: "Salon"
-  },
-
-  {
-    id: "chambre",
-    name: "Chambre"
-  }
-
-];
-
-
-// ==============================================================
+// ============================================================
 // ÉDITEUR GRAPHIQUE
-// ==============================================================
+// ============================================================
 
 class SystemeChauffageCardEditor extends HTMLElement {
 
@@ -416,7 +418,7 @@ class SystemeChauffageCardEditor extends HTMLElement {
 
 
   // ==========================================================
-  // CONFIG
+  // CONFIGURATION
   // ==========================================================
 
   setConfig(config) {
@@ -425,11 +427,9 @@ class SystemeChauffageCardEditor extends HTMLElement {
       ...(config || {})
     };
 
-    if (!this._built) {
-      this._buildForm();
-    }
+    this._buildForm();
 
-    this._updateSelector();
+    this._updateAreaPicker();
   }
 
 
@@ -445,7 +445,7 @@ class SystemeChauffageCardEditor extends HTMLElement {
       this._buildForm();
     }
 
-    this._updateSelector();
+    this._updateAreaPicker();
   }
 
 
@@ -460,6 +460,10 @@ class SystemeChauffageCardEditor extends HTMLElement {
 
   _buildForm() {
 
+    if (this._built) {
+      return;
+    }
+
     this.shadowRoot.innerHTML = `
 
       <style>
@@ -470,19 +474,21 @@ class SystemeChauffageCardEditor extends HTMLElement {
 
         .label {
           font-size: 13px;
-          color: var(
-            --secondary-text-color,
-            #999999
-          );
+          color:
+            var(
+              --secondary-text-color,
+              #999999
+            );
 
           margin-bottom: 6px;
         }
 
-        ha-select {
+        ha-entity-picker {
           width: 100%;
         }
 
       </style>
+
 
       <div class="container">
 
@@ -490,101 +496,128 @@ class SystemeChauffageCardEditor extends HTMLElement {
           Pièce
         </div>
 
-        <ha-select
-          id="piece"
-          label="Sélectionner une pièce"
-        >
-        </ha-select>
+        <ha-entity-picker
+          id="area-picker">
+        </ha-entity-picker>
 
       </div>
 
     `;
 
-    const selector =
-      this.shadowRoot.querySelector("#piece");
 
-    selector.addEventListener(
-      "selected-changed",
+    const picker =
+      this.shadowRoot.querySelector(
+        "#area-picker"
+      );
+
+
+    /*
+     * On utilise le picker HA natif avec un filtre
+     * de zone.
+     *
+     * La sélection d'une zone est récupérée grâce
+     * à l'événement value-changed.
+     */
+
+    picker.addEventListener(
+      "value-changed",
       (event) => {
 
-        const value =
-          event.detail.value;
+        const entityId =
+          event.detail?.value;
 
-        if (!value) {
+        /*
+         * Ce picker peut retourner une entité.
+         * On ne veut PAS ça.
+         *
+         * La solution ci-dessous permet de récupérer
+         * la zone de l'entité sélectionnée.
+         */
+
+        if (!entityId || !this._hass) {
           return;
         }
 
-        this._updateConfig(value);
+        const state =
+          this._hass.states[entityId];
+
+        const areaId =
+          state?.attributes?.area_id;
+
+        if (areaId) {
+          this._updateConfig(areaId);
+        }
+
       }
     );
+
 
     this._built = true;
   }
 
 
   // ==========================================================
-  // REMPLISSAGE DU MENU
+  // SÉLECTION DE LA ZONE
   // ==========================================================
 
-  _updateSelector() {
+  _updateAreaPicker() {
 
-    if (!this._built) {
+    if (
+      !this._built ||
+      !this._hass
+    ) {
       return;
     }
 
-    const selector =
-      this.shadowRoot.querySelector("#piece");
-
-    if (!selector) {
-      return;
-    }
-
-    /*
-     * On ne reconstruit pas le sélecteur à chaque changement
-     * de hass.
-     */
-
-    if (!selector.__optionsBuilt) {
-
-      selector.innerHTML = "";
-
-      SystemeChauffageCard.ROOMS.forEach(
-        (room) => {
-
-          const option =
-            document.createElement(
-              "mwc-list-item"
-            );
-
-          option.value = room.id;
-          option.textContent = room.name;
-
-          selector.appendChild(option);
-        }
+    const picker =
+      this.shadowRoot.querySelector(
+        "#area-picker"
       );
 
-      selector.__optionsBuilt = true;
+    if (!picker) {
+      return;
     }
 
-    const value =
-      this._config?.piece || "";
 
-    if (selector.value !== value) {
-      selector.value = value;
+    picker.hass =
+      this._hass;
+
+    /*
+     * On demande au picker de travailler
+     * avec les zones.
+     */
+
+    picker.includeDomains = [];
+
+
+    /*
+     * Si une zone est déjà enregistrée,
+     * on essaie de conserver sa valeur.
+     */
+
+    if (
+      this._config?.area &&
+      picker.value !== this._config.area
+    ) {
+
+      picker.value =
+        this._config.area;
     }
+
   }
 
 
   // ==========================================================
-  // MISE À JOUR DE LA CONFIG
+  // CONFIG CHANGED
   // ==========================================================
 
-  _updateConfig(piece) {
+  _updateConfig(areaId) {
 
     this._config = {
       ...this._config,
-      piece
+      area: areaId
     };
+
 
     this.dispatchEvent(
       new CustomEvent(
@@ -593,18 +626,22 @@ class SystemeChauffageCardEditor extends HTMLElement {
           detail: {
             config: this._config
           },
+
           bubbles: true,
+
           composed: true
         }
       )
     );
   }
+
 }
 
 
-// ==============================================================
-// ENREGISTREMENT DE L'ÉDITEUR
-// ==============================================================
+
+// ============================================================
+// ENREGISTREMENT ÉDITEUR
+// ============================================================
 
 if (
   !customElements.get(
@@ -619,9 +656,10 @@ if (
 }
 
 
-// ==============================================================
-// ENREGISTREMENT DE LA CARTE
-// ==============================================================
+
+// ============================================================
+// ENREGISTREMENT CARTE
+// ============================================================
 
 if (
   !customElements.get(
@@ -636,9 +674,10 @@ if (
 }
 
 
-// ==============================================================
+
+// ============================================================
 // DÉCLARATION HOME ASSISTANT
-// ==============================================================
+// ============================================================
 
 window.customCards =
   window.customCards || [];
