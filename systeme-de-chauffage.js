@@ -273,13 +273,144 @@ class SystemeChauffageCard extends HTMLElement {
               </span>
 
               <span class="unit">
-                °C/min
+                Min
               </span>
 
             </div>
 
           </div>
 
+          <!-- HEURE ANTICIPÉ -->
+
+          <div class="box">
+
+            <div class="label">
+              Heure anticipé
+            </div>
+
+            <div class="value">
+
+              <span>
+                --
+              </span>
+
+              <span class="unit">
+                H
+              </span>
+
+            </div>
+
+          </div>
+
+          <!-- HEURE PLANNING PRECEDENT -->
+
+          <div class="box">
+
+            <div class="label">
+              Heure planning précédent
+            </div>
+
+            <div class="value">
+
+              <span>
+                --
+              </span>
+
+              <span class="unit">
+                H
+              </span>
+
+            </div>
+
+          </div>
+
+         <!-- HEURE PLANNING -->
+
+          <div class="box">
+
+            <div class="label">
+              Heure planning
+            </div>
+
+            <div class="value">
+
+              <span>
+                --
+              </span>
+
+              <span class="unit">
+                H
+              </span>
+
+            </div>
+
+          </div>
+
+          <!-- PLANNING EN COURS -->
+
+          <div class="box">
+
+            <div class="label">
+             Planning en cours
+            </div>
+
+            <div class="value">
+
+              <span>
+                --
+              </span>
+
+              <span class="unit">
+                
+              </span>
+
+            </div>
+
+          </div>
+
+          <!-- COEFFICIENT -->
+
+          <div class="box">
+
+            <div class="label">
+              Coéfficient
+            </div>
+
+            <div class="value">
+
+              <span>
+                --
+              </span>
+
+              <span class="unit">
+                Min/°C
+              </span>
+
+            </div>
+
+          </div>
+
+          <!-- DERIVE -->
+
+          <div class="box">
+
+            <div class="label">
+              Dérive
+            </div>
+
+            <div class="value">
+
+              <span>
+                --
+              </span>
+
+              <span class="unit">
+                °C/Min
+              </span>
+
+            </div>
+
+          </div>
 
           <!-- ETAT -->
 
