@@ -1,10 +1,3 @@
-/*
- * ==========================================================
- * SYSTEME DE CHAUFFAGE
- * ETAPE 2 : CREER LES ZONES DU VISUEL
- * ==========================================================
- */
-
 class SystemeChauffageCard extends HTMLElement {
 
   constructor() {
