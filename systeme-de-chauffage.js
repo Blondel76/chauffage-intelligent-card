@@ -2,8 +2,9 @@ class SystemeChauffageCard extends HTMLElement {
 
   constructor() {
     super();
+
     this.attachShadow({ mode: "open" });
-    this._built = false;
+    this._rendered = false;
   }
 
   // ==========================================================
@@ -14,13 +15,11 @@ class SystemeChauffageCard extends HTMLElement {
 
     this.config = config || {};
 
-    if (!this.config.area) {
-      this.config.area = "";
+    if (!this._hass) {
+      return;
     }
 
-    if (this._hass) {
-      this._render();
-    }
+    this.render();
   }
 
   // ==========================================================
@@ -32,7 +31,7 @@ class SystemeChauffageCard extends HTMLElement {
     this._hass = hass;
 
     if (this.config) {
-      this._render();
+      this.render();
     }
   }
 
@@ -41,43 +40,14 @@ class SystemeChauffageCard extends HTMLElement {
   }
 
   // ==========================================================
-  // RECUPERATION DES PIECES HOME ASSISTANT
-  // ==========================================================
-
-  async _getAreas() {
-
-    if (!this._hass) {
-      return [];
-    }
-
-    try {
-
-      const result = await this._hass.callWS({
-        type: "config/area_registry/list"
-      });
-
-      return result || [];
-
-    } catch (error) {
-
-      console.error(
-        "systeme-chauffage-card : impossible de récupérer les pièces",
-        error
-      );
-
-      return [];
-    }
-  }
-
-  // ==========================================================
-  // CONSTRUCTION DES ENTITES
+  // CONSTRUCTION AUTOMATIQUE DES ENTITES
   // ==========================================================
   //
   // Exemple :
   //
-  // pièce = bureau_salle_de_jeux
+  // area = bureau_salle_de_jeux
   //
-  // devient :
+  // devient automatiquement :
   //
   // number.coefficient_bureau_salle_de_jeux
   // sensor.derive_bureau_salle_de_jeux
@@ -156,38 +126,44 @@ class SystemeChauffageCard extends HTMLElement {
   }
 
   // ==========================================================
+  // NOM DE LA PIECE
+  // ==========================================================
+
+  _getAreaName(areaId) {
+
+    if (!areaId || !this._hass) {
+      return "Aucune pièce sélectionnée";
+    }
+
+    /*
+     * On demande le registre des areas uniquement pour
+     * récupérer le nom humain de la pièce.
+     *
+     * Le fonctionnement de la carte ne dépend PAS de cette
+     * récupération : les entités utilisent directement areaId.
+     */
+
+    return this.config.area_name || areaId;
+  }
+
+  // ==========================================================
   // RENDU
   // ==========================================================
 
-  async _render() {
+  render() {
 
     if (!this._hass || !this.config) {
       return;
     }
 
-    const areas = await this._getAreas();
+    const area = this.config.area || "";
 
-    const selectedArea = this.config.area || "";
+    const areaName =
+      this.config.area_name ||
+      area ||
+      "Aucune pièce sélectionnée";
 
-    // --------------------------------------------------------
-    // NOM AFFICHÉ DE LA PIÈCE
-    // --------------------------------------------------------
-
-    let selectedAreaName = "Choisir une pièce";
-
-    const selectedAreaObj = areas.find(
-      area => area.area_id === selectedArea
-    );
-
-    if (selectedAreaObj) {
-      selectedAreaName = selectedAreaObj.name;
-    }
-
-    // --------------------------------------------------------
-    // ENTITES
-    // --------------------------------------------------------
-
-    const entities = this._getEntities(selectedArea);
+    const entities = this._getEntities(area);
 
     let boxes = "";
 
@@ -263,7 +239,7 @@ class SystemeChauffageCard extends HTMLElement {
     }
 
     // ========================================================
-    // HTML
+    // CARTE
     // ========================================================
 
     this.shadowRoot.innerHTML = `
@@ -275,12 +251,20 @@ class SystemeChauffageCard extends HTMLElement {
         }
 
         .card {
-          background: var(--card-background-color, #1c1c1c);
-          border: 1px solid var(--divider-color, #333);
+          background:
+            var(--card-background-color, #1c1c1c);
+
+          border:
+            1px solid var(--divider-color, #333333);
+
           border-radius: 12px;
+
           padding: 16px;
+
           box-sizing: border-box;
-          color: var(--primary-text-color, white);
+
+          color:
+            var(--primary-text-color, white);
         }
 
         .header {
@@ -295,9 +279,12 @@ class SystemeChauffageCard extends HTMLElement {
         }
 
         .room {
-          font-size: 14px;
-          color: var(--secondary-text-color, #999);
           margin-top: 3px;
+
+          font-size: 14px;
+
+          color:
+            var(--secondary-text-color, #999999);
         }
 
         .icon {
@@ -323,23 +310,31 @@ class SystemeChauffageCard extends HTMLElement {
 
         .label {
           font-size: 13px;
-          color: var(--secondary-text-color, #999);
+
+          color:
+            var(--secondary-text-color, #999999);
         }
 
         .value {
           margin-top: 5px;
+
           font-size: 22px;
+
           font-weight: 400;
         }
 
         .unit {
           font-size: 14px;
-          color: var(--secondary-text-color, #999);
+
+          color:
+            var(--secondary-text-color, #999999);
         }
 
         .empty {
           margin-top: 16px;
-          color: var(--secondary-text-color, #999);
+
+          color:
+            var(--secondary-text-color, #999999);
         }
 
       </style>
@@ -349,23 +344,31 @@ class SystemeChauffageCard extends HTMLElement {
         <div class="header">
 
           <div>
+
             <div class="title">
               Chauffage
             </div>
 
             <div class="room">
-              ${selectedAreaName}
+              ${areaName}
             </div>
+
           </div>
 
           <div class="icon">
-            <ha-icon icon="mdi:fire"></ha-icon>
+
+            <ha-icon
+              icon="mdi:fire">
+            </ha-icon>
+
           </div>
 
         </div>
 
         <div class="grid">
+
           ${boxes}
+
         </div>
 
       </div>
@@ -374,7 +377,7 @@ class SystemeChauffageCard extends HTMLElement {
   }
 
   // ==========================================================
-  // EDITEUR GRAPHIQUE
+  // EDITEUR NATIF HOME ASSISTANT
   // ==========================================================
 
   static getConfigElement() {
@@ -396,14 +399,15 @@ class SystemeChauffageCard extends HTMLElement {
   // ==========================================================
 
   getCardSize() {
+
     return 4;
   }
 }
 
 
-// ==============================================================
+// =============================================================
 // EDITEUR
-// ==============================================================
+// =============================================================
 
 class SystemeChauffageCardEditor extends HTMLElement {
 
@@ -416,7 +420,7 @@ class SystemeChauffageCardEditor extends HTMLElement {
     });
 
     this._built = false;
-    this._areas = [];
+    this._selector = null;
   }
 
   // ==========================================================
@@ -435,7 +439,7 @@ class SystemeChauffageCardEditor extends HTMLElement {
 
     this._build();
 
-    this._update();
+    this._updateSelector();
   }
 
   // ==========================================================
@@ -446,12 +450,15 @@ class SystemeChauffageCardEditor extends HTMLElement {
 
     this._hass = hass;
 
-    if (this._built) {
-      this._loadAreas();
+    if (!this._built) {
+      this._build();
     }
+
+    this._updateSelector();
   }
 
   get hass() {
+
     return this._hass;
   }
 
@@ -470,37 +477,24 @@ class SystemeChauffageCardEditor extends HTMLElement {
       <style>
 
         .container {
-          padding: 8px 0;
+          padding: 8px 0 16px 0;
         }
 
         .title {
           font-size: 14px;
+
           font-weight: 500;
+
           margin-bottom: 8px;
-        }
-
-        select {
-          width: 100%;
-          box-sizing: border-box;
-          padding: 12px;
-          border-radius: 8px;
-          border: 1px solid
-            var(--divider-color, #444);
-
-          background:
-            var(--secondary-background-color, #222);
-
-          color:
-            var(--primary-text-color, white);
-
-          font-size: 16px;
         }
 
         .info {
           margin-top: 10px;
+
           font-size: 12px;
+
           color:
-            var(--secondary-text-color, #999);
+            var(--secondary-text-color, #999999);
         }
 
       </style>
@@ -511,150 +505,75 @@ class SystemeChauffageCardEditor extends HTMLElement {
           Pièce
         </div>
 
-        <select id="area">
-
-          <option value="">
-            Chargement des pièces...
-          </option>
-
-        </select>
+        <ha-selector
+          id="area-selector">
+        </ha-selector>
 
         <div class="info">
-          Les entités de chauffage sont détectées
-          automatiquement à partir de la pièce sélectionnée.
+          Les entités du chauffage sont sélectionnées
+          automatiquement selon la pièce.
         </div>
 
       </div>
 
     `;
 
-    this.shadowRoot
-      .querySelector("#area")
-      .addEventListener("change", (event) => {
+    this._selector =
+      this.shadowRoot.querySelector(
+        "#area-selector"
+      );
+
+    // --------------------------------------------------------
+    // CHANGEMENT DE PIECE
+    // --------------------------------------------------------
+
+    this._selector.addEventListener(
+      "value-changed",
+      (event) => {
+
+        const areaId =
+          event.detail.value || "";
 
         this._config = {
           ...this._config,
-          area: event.target.value
+          area: areaId
         };
 
         this._fireConfigChanged();
-
-      });
+      }
+    );
 
     this._built = true;
   }
 
   // ==========================================================
-  // RECUPERATION DES AREAS
+  // CONFIGURATION DU SELECTEUR NATIF
   // ==========================================================
 
-  async _loadAreas() {
+  _updateSelector() {
 
-    if (!this._hass) {
+    if (!this._selector || !this._hass) {
       return;
     }
 
-    try {
+    /*
+     * C'est le sélecteur natif HA.
+     *
+     * selector:
+     *   area:
+     *
+     * Home Assistant récupère lui-même les pièces
+     * disponibles dans son registre.
+     */
 
-      const areas = await this._hass.callWS({
-        type: "config/area_registry/list"
-      });
+    this._selector.hass = this._hass;
 
-      this._areas = areas || [];
+    this._selector.selector = {
+      area: {}
+    };
 
-      this._update();
-
-    } catch (error) {
-
-      console.error(
-        "systeme-chauffage-card editor : erreur areas",
-        error
-      );
-
-      const select =
-        this.shadowRoot.querySelector("#area");
-
-      if (select) {
-
-        select.innerHTML = `
-          <option value="">
-            Impossible de charger les pièces
-          </option>
-        `;
-      }
-    }
-  }
-
-  // ==========================================================
-  // MISE A JOUR DU SELECTEUR
-  // ==========================================================
-
-  _update() {
-
-    if (!this._built) {
-      return;
-    }
-
-    const select =
-      this.shadowRoot.querySelector("#area");
-
-    if (!select) {
-      return;
-    }
-
-    const currentValue =
+    this._selector.value =
       this._config?.area || "";
-
-    select.innerHTML = "";
-
-    // --------------------------------------------------------
-    // OPTION VIDE
-    // --------------------------------------------------------
-
-    const emptyOption =
-      document.createElement("option");
-
-    emptyOption.value = "";
-    emptyOption.textContent =
-      "Choisir une pièce...";
-
-    select.appendChild(emptyOption);
-
-    // --------------------------------------------------------
-    // PIECES HA
-    // --------------------------------------------------------
-
-    this._areas
-      .slice()
-      .sort((a, b) =>
-        a.name.localeCompare(
-          b.name,
-          "fr",
-          { sensitivity: "base" }
-        )
-      )
-      .forEach((area) => {
-
-        const option =
-          document.createElement("option");
-
-        option.value = area.area_id;
-        option.textContent = area.name;
-
-        if (area.area_id === currentValue) {
-          option.selected = true;
-        }
-
-        select.appendChild(option);
-      });
-
-    // Si aucune pièce n'est encore disponible
-    if (this._areas.length === 0) {
-
-      emptyOption.textContent =
-        "Aucune pièce trouvée";
-
-    }
   }
 
   // ==========================================================
@@ -664,24 +583,26 @@ class SystemeChauffageCardEditor extends HTMLElement {
   _fireConfigChanged() {
 
     this.dispatchEvent(
-      new CustomEvent("config-changed", {
+      new CustomEvent(
+        "config-changed",
+        {
+          detail: {
+            config: this._config
+          },
 
-        detail: {
-          config: this._config
-        },
+          bubbles: true,
 
-        bubbles: true,
-        composed: true
-
-      })
+          composed: true
+        }
+      )
     );
   }
 }
 
 
-// ==============================================================
-// ENREGISTREMENT EDITEUR
-// ==============================================================
+// =============================================================
+// ENREGISTREMENT DE L'EDITEUR
+// =============================================================
 
 if (
   !customElements.get(
@@ -696,9 +617,9 @@ if (
 }
 
 
-// ==============================================================
-// ENREGISTREMENT CARTE
-// ==============================================================
+// =============================================================
+// ENREGISTREMENT DE LA CARTE
+// =============================================================
 
 if (
   !customElements.get(
@@ -713,9 +634,9 @@ if (
 }
 
 
-// ==============================================================
+// =============================================================
 // DECLARATION HOME ASSISTANT
-// ==============================================================
+// =============================================================
 
 window.customCards =
   window.customCards || [];
@@ -730,14 +651,16 @@ if (
 
   window.customCards.push({
 
-    type: "systeme-chauffage-card",
+    type:
+      "systeme-chauffage-card",
 
-    name: "Système de chauffage",
+    name:
+      "Système de chauffage",
 
     description:
       "Affichage du chauffage par pièce",
 
-    preview: true
-
+    preview:
+      true
   });
 }
