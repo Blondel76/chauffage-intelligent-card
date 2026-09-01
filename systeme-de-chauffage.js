@@ -75,23 +75,22 @@ class SystemeChauffageCard extends HTMLElement {
          colonne plus large ou plus étroite du dashboard),
          au lieu d'être bloquée sur exactement 2 colonnes. */
 
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-        gap: 10px;
-        margin-top: 16px;
-      }
+        .grid {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 10px;
+          margin-top: 16px;
+        }
 
       /* ==============================
          BLOC
          ============================== */
 
-      .box {
-        background: var(--secondary-background-color, #242424);
-        border: 1px solid var(--divider-color, #333333);
-        border-radius: 10px;
-        padding: 12px;
-      }
+        .box {
+          width: max-content;
+          min-width: 120px;
+          box-sizing: border-box;
+        }
 
       .label {
         font-size: 13px;
