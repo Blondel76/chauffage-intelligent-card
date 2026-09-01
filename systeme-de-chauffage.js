@@ -89,11 +89,14 @@ class SystemeChauffageCard extends HTMLElement {
         .grid {
 
           display: grid;
-
+          
+          /*nombre de colonnes dans la grille 1fr 1fr (2colonnes), 1fr 1fr 1fr (3colonne), 1fr 2fr 1fr (3colonne mais la colonne du milieu plus large)*/ 
           grid-template-columns: 1fr 1fr;
 
+          /* espace entre les colonne*/
           gap: 10px;
 
+          /* ajoute 16 px de marge au-dessus de la grille */
           margin-top: 16px;
 
         }
@@ -185,6 +188,30 @@ class SystemeChauffageCard extends HTMLElement {
         <div class="grid">
 
 
+          <!-- TEMPERATURE EXTÉRIEUR -->
+
+          <div class="box">
+
+            <div class="label">
+              Température extérieur
+            </div>
+
+            <div class="value">
+
+              <span>
+                --
+              </span>
+
+              <span class="unit">
+                °C
+              </span>
+
+            </div>
+
+          </div>
+
+          
+
           <!-- TEMPERATURE INTERIEURE -->
 
           <div class="box">
@@ -231,12 +258,12 @@ class SystemeChauffageCard extends HTMLElement {
           </div>
 
 
-          <!-- TEMPERATURE EXTERIEURE -->
+          <!-- TEMPS DE CHAUFFE -->
 
           <div class="box">
 
             <div class="label">
-              Extérieur
+              Temps de chauffe
             </div>
 
             <div class="value">
@@ -246,7 +273,7 @@ class SystemeChauffageCard extends HTMLElement {
               </span>
 
               <span class="unit">
-                °C
+                °C/min
               </span>
 
             </div>
