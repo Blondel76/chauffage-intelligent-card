@@ -645,17 +645,17 @@ if (
   !window.customCards.some(
     card =>
       card.type ===
-      "systeme-chauffage-card"
+      "chauffage-intelligent-card"
   )
 ) {
 
   window.customCards.push({
 
     type:
-      "systeme-chauffage-card",
+      "chauffage-intelligent-card",
 
     name:
-      "Système de chauffage",
+      "Chauffage intélligent card",
 
     description:
       "Affichage du chauffage par pièce",
