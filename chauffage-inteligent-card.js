@@ -1,4 +1,4 @@
-class SystemeChauffageCard extends HTMLElement {
+class ChauffageInteligentCard extends HTMLElement {
 
   constructor() {
     super();
