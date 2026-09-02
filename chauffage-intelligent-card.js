@@ -77,14 +77,30 @@ class ChauffageIntelligentCard extends HTMLElement {
     return {
 
       coefficient: `number.coefficient_${area}`,
-      derive: `sensor.derive_${area}`,
-      heureAnticipee: `sensor.heure_anticipee_${area}`,
-      heurePlanning: `sensor.heure_planning_${area}`,
-      heurePlanningPrecedent: `sensor.heure_planning_precedent_${area}`,
-      tempsChauffe: `sensor.temps_de_chauffe_${area}`
+      derive: `sensor.${area}_derive`,
+      heureAnticipee: `sensor.${area}_heure_anticipee`,
+      heurePlanning: `sensor.${area}_heure_planning`,
+      heurePlanningPrecedent: `sensor.${area}_heure_planning_precedent`,
+      tempsChauffe: `sensor.${area}_temps_de_chauffe`
 
     };
   }
+  _getEntities(area) {
+
+  if (!area) {
+    return null;
+  }
+
+  return {
+    coefficient: `number.coefficient_${area}`,
+    derive: `sensor.${area}_derive`,
+    heureAnticipee: `sensor.${area}_heure_anticipee`,
+    heurePlanning: `sensor.${area}_heure_planning`,
+    heurePlanningPrecedent: `sensor.${area}_heure_planning_precedent`,
+    tempsChauffe: `sensor.${area}_temps_de_chauffe`
+  };
+}
+
 
   // ==========================================================
   // LECTURE D'UNE ENTITE
