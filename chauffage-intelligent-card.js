@@ -8,6 +8,7 @@ class ChauffageIntelligentCard extends HTMLElement {
     this._lastArea = null;
     this._valueEls = null;
     this._climateEntityId = undefined;
+    this._windowEntityId = undefined;
   }
 
   // ==========================================================
@@ -71,6 +72,10 @@ class ChauffageIntelligentCard extends HTMLElement {
       securite: `sensor.securite_${area}`,
       aeration: `sensor.aeration_${area}`,
       humidite: `sensor.humidite_${area}`,
+
+      // Entité historique conservée.
+      // La recherche réelle de la fenêtre est faite
+      // avec _resolveWindowEntity().
       fenetreOuverte: `switch.fenetre_ouverte_${area}`,
 
     };
@@ -99,12 +104,66 @@ class ChauffageIntelligentCard extends HTMLElement {
         continue;
       }
 
-      const entityArea = entry.area_id
-        || (devices && entry.device_id
-          ? devices[entry.device_id]?.area_id
-          : null);
+      const entityArea =
+        entry.area_id ||
+        (
+          devices &&
+          entry.device_id
+            ? devices[entry.device_id]?.area_id
+            : null
+        );
 
       if (entityArea === area) {
+        return entityId;
+      }
+    }
+
+    return null;
+  }
+
+  // ==========================================================
+  // RECHERCHE DE L'ENTITE FENETRE
+  // ==========================================================
+
+  _resolveWindowEntity(area) {
+
+    if (!area || !this._hass) {
+      return null;
+    }
+
+    // --------------------------------------------------------
+    // 1. Recherche exacte
+    // --------------------------------------------------------
+
+    const expectedIds = [
+      `switch.fenetre_ouverte_${area}`,
+      `binary_sensor.fenetre_ouverte_${area}`,
+      `sensor.fenetre_ouverte_${area}`,
+    ];
+
+    for (const entityId of expectedIds) {
+
+      if (this._hass.states[entityId]) {
+        return entityId;
+      }
+    }
+
+    // --------------------------------------------------------
+    // 2. Recherche plus souple
+    // --------------------------------------------------------
+
+    const search =
+      `fenetre_ouverte_${area}`.toLowerCase();
+
+    for (
+      const entityId of Object.keys(this._hass.states)
+    ) {
+
+      if (
+        entityId
+          .toLowerCase()
+          .includes(search)
+      ) {
         return entityId;
       }
     }
@@ -122,7 +181,8 @@ class ChauffageIntelligentCard extends HTMLElement {
       return "--";
     }
 
-    const entity = this._hass.states[entityId];
+    const entity =
+      this._hass.states[entityId];
 
     if (!entity) {
       return "--";
@@ -160,9 +220,14 @@ class ChauffageIntelligentCard extends HTMLElement {
       return "Aucune pièce sélectionnée";
     }
 
-    const registryName = this._hass?.areas?.[areaId]?.name;
+    const registryName =
+      this._hass?.areas?.[areaId]?.name;
 
-    return registryName || this.config?.area_name || areaId;
+    return (
+      registryName ||
+      this.config?.area_name ||
+      areaId
+    );
   }
 
   // ==========================================================
@@ -172,13 +237,25 @@ class ChauffageIntelligentCard extends HTMLElement {
   _securityColorVar(securityState) {
 
     const map = {
-      vert: "var(--success-color, #4caf50)",
-      orange: "var(--warning-color, #ff9800)",
-      rouge: "var(--error-color, #f44336)",
-      gris: "var(--disabled-text-color, #9e9e9e)",
+
+      vert:
+        "var(--success-color, #4caf50)",
+
+      orange:
+        "var(--warning-color, #ff9800)",
+
+      rouge:
+        "var(--error-color, #f44336)",
+
+      gris:
+        "var(--disabled-text-color, #9e9e9e)",
+
     };
 
-    return map[securityState] || map.gris;
+    return (
+      map[securityState] ||
+      map.gris
+    );
   }
 
   // ==========================================================
@@ -191,20 +268,35 @@ class ChauffageIntelligentCard extends HTMLElement {
       return;
     }
 
-    const area = this.config.area || "";
-    const areaName = this._getAreaName(area);
-    const entities = this._getEntities(area);
+    const area =
+      this.config.area || "";
 
-    this._climateEntityId = this._resolveClimateEntity(area);
+    const areaName =
+      this._getAreaName(area);
+
+    const entities =
+      this._getEntities(area);
+
+    // Recherche du climate
+    this._climateEntityId =
+      this._resolveClimateEntity(area);
+
+    // Recherche de la fenêtre
+    this._windowEntityId =
+      this._resolveWindowEntity(area);
 
     let bodyHtml = "";
 
     if (entities) {
 
       bodyHtml = `
+
         <div class="dial-wrap">
 
-          <svg viewBox="0 0 180 180" class="dial-svg">
+          <svg
+            viewBox="0 0 180 180"
+            class="dial-svg"
+          >
 
             <circle
               cx="90"
@@ -247,7 +339,9 @@ class ChauffageIntelligentCard extends HTMLElement {
 
           <div class="status-chip">
 
-            <ha-icon icon="mdi:water-percent"></ha-icon>
+            <ha-icon
+              icon="mdi:water-percent"
+            ></ha-icon>
 
             <span data-key="humidite">
               --
@@ -257,7 +351,9 @@ class ChauffageIntelligentCard extends HTMLElement {
 
           <div class="status-chip">
 
-            <ha-icon icon="mdi:window-open-variant"></ha-icon>
+            <ha-icon
+              icon="mdi:window-open-variant"
+            ></ha-icon>
 
             <span data-key="aeration">
               --
@@ -267,7 +363,9 @@ class ChauffageIntelligentCard extends HTMLElement {
 
           <div class="status-chip">
 
-            <ha-icon icon="mdi:window-closed-variant"></ha-icon>
+            <ha-icon
+              icon="mdi:window-closed-variant"
+            ></ha-icon>
 
             <span data-key="fenetreOuverte">
               --
@@ -276,14 +374,17 @@ class ChauffageIntelligentCard extends HTMLElement {
           </div>
 
         </div>
+
       `;
 
     } else {
 
       bodyHtml = `
+
         <div class="empty">
           Sélectionne une pièce dans la configuration.
         </div>
+
       `;
     }
 
@@ -296,23 +397,27 @@ class ChauffageIntelligentCard extends HTMLElement {
         }
 
         .card {
-          background: var(
-            --ha-card-background,
-            var(--card-background-color)
-          );
+          background:
+            var(
+              --ha-card-background,
+              var(--card-background-color)
+            );
 
-          border: 1px solid var(--divider-color);
+          border:
+            1px solid var(--divider-color);
 
-          border-radius: var(
-            --ha-card-border-radius,
-            12px
-          );
+          border-radius:
+            var(
+              --ha-card-border-radius,
+              12px
+            );
 
           padding: 16px;
 
           box-sizing: border-box;
 
-          color: var(--primary-text-color);
+          color:
+            var(--primary-text-color);
         }
 
         .header {
@@ -325,6 +430,7 @@ class ChauffageIntelligentCard extends HTMLElement {
 
         .title {
           font-size: 18px;
+
           font-weight: 500;
         }
 
@@ -333,7 +439,8 @@ class ChauffageIntelligentCard extends HTMLElement {
 
           font-size: 14px;
 
-          color: var(--secondary-text-color);
+          color:
+            var(--secondary-text-color);
         }
 
         .heating-badge {
@@ -349,21 +456,25 @@ class ChauffageIntelligentCard extends HTMLElement {
 
           font-size: 12px;
 
-          background: var(--secondary-background-color);
+          background:
+            var(--secondary-background-color);
 
-          color: var(--secondary-text-color);
+          color:
+            var(--secondary-text-color);
         }
 
         .heating-badge.active {
-          background: rgba(
-            var(--rgb-success-color, 76, 175, 80),
-            0.15
-          );
+          background:
+            rgba(
+              var(--rgb-success-color, 76, 175, 80),
+              0.15
+            );
 
-          color: var(
-            --success-color,
-            #4caf50
-          );
+          color:
+            var(
+              --success-color,
+              #4caf50
+            );
         }
 
         .heating-badge ha-icon {
@@ -382,13 +493,15 @@ class ChauffageIntelligentCard extends HTMLElement {
 
         .dial-svg {
           width: 100%;
+
           height: 100%;
         }
 
         .dial-track {
           fill: none;
 
-          stroke: var(--divider-color);
+          stroke:
+            var(--divider-color);
 
           stroke-width: 10;
         }
@@ -436,7 +549,8 @@ class ChauffageIntelligentCard extends HTMLElement {
 
           font-size: 12px;
 
-          color: var(--secondary-text-color);
+          color:
+            var(--secondary-text-color);
         }
 
         .status-row {
@@ -458,7 +572,8 @@ class ChauffageIntelligentCard extends HTMLElement {
 
           gap: 4px;
 
-          background: var(--secondary-background-color);
+          background:
+            var(--secondary-background-color);
 
           border-radius: 8px;
 
@@ -466,7 +581,8 @@ class ChauffageIntelligentCard extends HTMLElement {
 
           font-size: 11px;
 
-          color: var(--secondary-text-color);
+          color:
+            var(--secondary-text-color);
 
           text-align: center;
         }
@@ -474,13 +590,15 @@ class ChauffageIntelligentCard extends HTMLElement {
         .status-chip ha-icon {
           --mdc-icon-size: 18px;
 
-          color: var(--secondary-text-color);
+          color:
+            var(--secondary-text-color);
         }
 
         .empty {
           margin-top: 16px;
 
-          color: var(--secondary-text-color);
+          color:
+            var(--secondary-text-color);
         }
 
       </style>
@@ -506,9 +624,13 @@ class ChauffageIntelligentCard extends HTMLElement {
             data-key="heatingBadge"
           >
 
-            <ha-icon icon="mdi:fire"></ha-icon>
+            <ha-icon
+              icon="mdi:fire"
+            ></ha-icon>
 
-            <span data-key="heatingLabel">
+            <span
+              data-key="heatingLabel"
+            >
               --
             </span>
 
@@ -519,64 +641,70 @@ class ChauffageIntelligentCard extends HTMLElement {
         ${bodyHtml}
 
       </div>
+
     `;
 
     // ========================================================
-    // CACHE DES ELEMENTS A METTRE A JOUR
+    // CACHE DES ELEMENTS
     // ========================================================
 
-    this._valueEls = entities
-      ? {
+    this._valueEls =
+      entities
 
-          humidite:
-            this.shadowRoot.querySelector(
-              '[data-key="humidite"]'
-            ),
+        ? {
 
-          aeration:
-            this.shadowRoot.querySelector(
-              '[data-key="aeration"]'
-            ),
+            humidite:
+              this.shadowRoot.querySelector(
+                '[data-key="humidite"]'
+              ),
 
-          fenetreOuverte:
-            this.shadowRoot.querySelector(
-              '[data-key="fenetreOuverte"]'
-            ),
+            aeration:
+              this.shadowRoot.querySelector(
+                '[data-key="aeration"]'
+              ),
 
-          dialValue:
-            this.shadowRoot.querySelector(
-              '[data-key="dialValue"]'
-            ),
+            fenetreOuverte:
+              this.shadowRoot.querySelector(
+                '[data-key="fenetreOuverte"]'
+              ),
 
-          dialSub:
-            this.shadowRoot.querySelector(
-              '[data-key="dialSub"]'
-            ),
+            dialValue:
+              this.shadowRoot.querySelector(
+                '[data-key="dialValue"]'
+              ),
 
-          dialProgress:
-            this.shadowRoot.querySelector(
-              '[data-key="dialProgress"]'
-            ),
+            dialSub:
+              this.shadowRoot.querySelector(
+                '[data-key="dialSub"]'
+              ),
 
-          heatingBadge:
-            this.shadowRoot.querySelector(
-              '[data-key="heatingBadge"]'
-            ),
+            dialProgress:
+              this.shadowRoot.querySelector(
+                '[data-key="dialProgress"]'
+              ),
 
-          heatingLabel:
-            this.shadowRoot.querySelector(
-              '[data-key="heatingLabel"]'
-            ),
+            heatingBadge:
+              this.shadowRoot.querySelector(
+                '[data-key="heatingBadge"]'
+              ),
 
-        }
+            heatingLabel:
+              this.shadowRoot.querySelector(
+                '[data-key="heatingLabel"]'
+              ),
 
-      : null;
+          }
 
-    this._entities = entities;
+        : null;
 
-    this._lastArea = area;
+    this._entities =
+      entities;
 
-    this._rendered = true;
+    this._lastArea =
+      area;
+
+    this._rendered =
+      true;
 
     this._updateValues();
   }
@@ -587,11 +715,15 @@ class ChauffageIntelligentCard extends HTMLElement {
 
   _updateValues() {
 
-    if (!this._entities || !this._valueEls) {
+    if (
+      !this._entities ||
+      !this._valueEls
+    ) {
       return;
     }
 
-    const els = this._valueEls;
+    const els =
+      this._valueEls;
 
     const circumference =
       2 * Math.PI * 78;
@@ -622,14 +754,16 @@ class ChauffageIntelligentCard extends HTMLElement {
         : null;
 
     const current =
-      climateState?.attributes?.current_temperature;
+      climateState?.attributes
+        ?.current_temperature;
 
     const target =
-      climateState?.attributes?.temperature;
+      climateState?.attributes
+        ?.temperature;
 
     const heating =
-      climateState?.attributes?.hvac_action ===
-      "heating";
+      climateState?.attributes
+        ?.hvac_action === "heating";
 
     // ========================================================
     // CENTRE DU CADRAN
@@ -646,7 +780,9 @@ class ChauffageIntelligentCard extends HTMLElement {
       els.dialSub.textContent =
         target !== undefined &&
         target !== null
+
           ? `consigne ${target}°`
+
           : "consigne --";
 
       const ratio =
@@ -750,16 +886,44 @@ class ChauffageIntelligentCard extends HTMLElement {
     // ========================================================
 
     const fenetreState =
-      this._getState(
-        this._entities.fenetreOuverte
-      );
+      this._windowEntityId
+        ? this._getState(
+            this._windowEntityId
+          )
+        : "--";
 
-    els.fenetreOuverte.textContent =
-      fenetreState === "on"
-        ? "Ouverte"
-        : fenetreState === "off"
-          ? "Fermée"
-          : "--";
+    const normalizedWindowState =
+      String(fenetreState)
+        .toLowerCase()
+        .trim();
+
+    if (
+      normalizedWindowState === "on" ||
+      normalizedWindowState === "open" ||
+      normalizedWindowState === "opened" ||
+      normalizedWindowState === "ouvert" ||
+      normalizedWindowState === "ouverte"
+    ) {
+
+      els.fenetreOuverte.textContent =
+        "Ouverte";
+
+    } else if (
+      normalizedWindowState === "off" ||
+      normalizedWindowState === "closed" ||
+      normalizedWindowState === "close" ||
+      normalizedWindowState === "fermé" ||
+      normalizedWindowState === "fermée"
+    ) {
+
+      els.fenetreOuverte.textContent =
+        "Fermée";
+
+    } else {
+
+      els.fenetreOuverte.textContent =
+        "--";
+    }
   }
 
   // ==========================================================
@@ -767,12 +931,14 @@ class ChauffageIntelligentCard extends HTMLElement {
   // ==========================================================
 
   static getConfigElement() {
+
     return document.createElement(
       "chauffage-intelligent-card-editor"
     );
   }
 
   static getStubConfig() {
+
     return {
       area: ""
     };
@@ -792,18 +958,22 @@ class ChauffageIntelligentCard extends HTMLElement {
 // EDITEUR
 // =============================================================
 
-class ChauffageIntelligentCardEditor extends HTMLElement {
+class ChauffageIntelligentCardEditor
+  extends HTMLElement {
 
   constructor() {
+
     super();
 
     this.attachShadow({
       mode: "open"
     });
 
-    this._built = false;
+    this._built =
+      false;
 
-    this._selector = null;
+    this._selector =
+      null;
   }
 
   setConfig(config) {
@@ -823,7 +993,8 @@ class ChauffageIntelligentCardEditor extends HTMLElement {
 
   set hass(hass) {
 
-    this._hass = hass;
+    this._hass =
+      hass;
 
     if (!this._built) {
       this._build();
@@ -892,6 +1063,7 @@ class ChauffageIntelligentCardEditor extends HTMLElement {
         </div>
 
       </div>
+
     `;
 
     this._selector =
@@ -915,7 +1087,8 @@ class ChauffageIntelligentCardEditor extends HTMLElement {
       }
     );
 
-    this._built = true;
+    this._built =
+      true;
   }
 
   // ==========================================================
@@ -1026,7 +1199,8 @@ if (
     description:
       "Affichage du chauffage par pièce",
 
-    preview: true
+    preview:
+      true
 
   });
 }
