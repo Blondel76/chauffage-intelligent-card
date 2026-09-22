@@ -7,7 +7,6 @@ class ChauffageIntelligentCard extends HTMLElement {
     this._rendered = false;
     this._lastArea = null;
     this._valueEls = null;
-    this._climateEntityId = undefined; // undefined = pas encore cherché, null = pas trouvé
   }
 
   // ==========================================================
@@ -61,15 +60,13 @@ class ChauffageIntelligentCard extends HTMLElement {
   // devient automatiquement :
   //
   // number.coefficient_bureau_salle_de_jeux
-  // sensor.derive_bureau_salle_de_jeux
-  // sensor.heure_anticipee_bureau_salle_de_jeux
   // sensor.heure_planning_bureau_salle_de_jeux
-  // sensor.heure_planning_precedent_bureau_salle_de_jeux
-  // sensor.temps_de_chauffe_bureau_salle_de_jeux
-  // sensor.securite_bureau_salle_de_jeux
-  // sensor.aeration_bureau_salle_de_jeux (optionnel selon config de la pièce)
   // sensor.humidite_bureau_salle_de_jeux (optionnel selon config de la pièce)
-  // switch.fenetre_ouverte_bureau_salle_de_jeux (optionnel, absent si capteur de porte configuré)
+  //
+  // Le thermostat de la pièce (climate.*) n'est PAS déduit
+  // automatiquement : il y a souvent deux entités climate par
+  // pièce (le thermostat ET la vanne en chauffage gaz), donc on
+  // demande explicitement laquelle utiliser dans l'éditeur.
   //
   // ==========================================================
 
@@ -81,64 +78,10 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     return {
 
-      coefficient: `number.coefficient_${area}`,
-      derive: `sensor.derive_${area}`,
-      heureAnticipee: `sensor.heure_anticipee_${area}`,
       heurePlanning: `sensor.heure_planning_${area}`,
-      heurePlanningPrecedent: `sensor.heure_planning_precedent_${area}`,
-      tempsChauffe: `sensor.temps_de_chauffe_${area}`,
-      securite: `sensor.securite_${area}`,
-      aeration: `sensor.aeration_${area}`,
       humidite: `sensor.humidite_${area}`,
-      fenetreOuverte: `switch.fenetre_ouverte_${area}`,
 
     };
-  }
-
-  // ==========================================================
-  // RECHERCHE DE L'ENTITE CLIMATE DE LA PIECE
-  // ==========================================================
-  //
-  // Le nom de l'entité climate n'est pas déductible du slug de
-  // la pièce (choisi librement lors de la config de l'intégration),
-  // donc on la retrouve via le registre area de Home Assistant :
-  // une entité climate directement affectée à l'area, ou dont
-  // l'appareil (device) est affecté à l'area.
-  //
-  // Si le registre n'est pas exposé par cette version de HA, ou
-  // qu'aucune entité climate ne matche, on renvoie null et la
-  // carte bascule sur un affichage de repli (temps de chauffe).
-  //
-  // ==========================================================
-
-  _resolveClimateEntity(area) {
-
-    if (!area || !this._hass) {
-      return null;
-    }
-
-    const entities = this._hass.entities;
-    const devices = this._hass.devices;
-
-    if (!entities) {
-      return null;
-    }
-
-    for (const [entityId, entry] of Object.entries(entities)) {
-
-      if (!entityId.startsWith("climate.")) {
-        continue;
-      }
-
-      const entityArea = entry.area_id
-        || (devices && entry.device_id ? devices[entry.device_id]?.area_id : null);
-
-      if (entityArea === area) {
-        return entityId;
-      }
-    }
-
-    return null;
   }
 
   // ==========================================================
@@ -189,9 +132,6 @@ class ChauffageIntelligentCard extends HTMLElement {
       return "Aucune pièce sélectionnée";
     }
 
-    // Le registre des areas est exposé côté frontend HA sur
-    // hass.areas (clé = area_id). On retombe sur area_name
-    // fourni en config, puis sur le slug brut si indisponible.
     const registryName = this._hass?.areas?.[areaId]?.name;
 
     return registryName || this.config?.area_name || areaId;
@@ -214,6 +154,25 @@ class ChauffageIntelligentCard extends HTMLElement {
   }
 
   // ==========================================================
+  // FORMATAGE DU PROCHAIN CRENEAU ("18h00|confort" -> "18h00 confort")
+  // ==========================================================
+
+  _formatPlanningSlot(rawState) {
+
+    if (!rawState || rawState === "unknown" || rawState === "unavailable") {
+      return "--";
+    }
+
+    if (!rawState.includes("|")) {
+      return rawState;
+    }
+
+    const [heure, preset] = rawState.split("|");
+
+    return `${heure.trim()} ${preset.trim()}`;
+  }
+
+  // ==========================================================
   // RENDU COMPLET (structure + styles)
   // ==========================================================
   // Appelé uniquement à la création ou quand la pièce change.
@@ -228,8 +187,7 @@ class ChauffageIntelligentCard extends HTMLElement {
     const area = this.config.area || "";
     const areaName = this._getAreaName(area);
     const entities = this._getEntities(area);
-
-    this._climateEntityId = this._resolveClimateEntity(area);
+    const securiteEntity = area ? `sensor.securite_${area}` : null;
 
     let bodyHtml = "";
 
@@ -247,50 +205,12 @@ class ChauffageIntelligentCard extends HTMLElement {
           </div>
         </div>
 
-        <div class="status-row">
-          <div class="status-chip">
-            <ha-icon icon="mdi:water-percent"></ha-icon>
-            <span data-key="humidite">--</span>
-          </div>
-          <div class="status-chip">
-            <ha-icon icon="mdi:window-open-variant"></ha-icon>
-            <span data-key="aeration">--</span>
-          </div>
-          <div class="status-chip">
-            <ha-icon icon="mdi:window-closed-variant"></ha-icon>
-            <span data-key="fenetreOuverte">--</span>
-          </div>
+        <div class="humidity-row">
+          <ha-icon icon="mdi:water-percent"></ha-icon>
+          <span data-key="humidite">--</span>
         </div>
 
-        <div class="footer">
-          <div class="footer-item">
-            <div class="footer-label">Prochain</div>
-            <div class="footer-value" data-key="heurePlanning">--</div>
-          </div>
-          <div class="footer-item">
-            <div class="footer-label">Précédent</div>
-            <div class="footer-value" data-key="heurePlanningPrecedent">--</div>
-          </div>
-          <div class="footer-item">
-            <div class="footer-label">Anticipé</div>
-            <div class="footer-value" data-key="heureAnticipee">--</div>
-          </div>
-        </div>
-
-        <div class="footer footer-secondary">
-          <div class="footer-item">
-            <div class="footer-label">Coefficient</div>
-            <div class="footer-value" data-key="coefficient">--</div>
-          </div>
-          <div class="footer-item">
-            <div class="footer-label">Dérive</div>
-            <div class="footer-value" data-key="derive">--<span class="unit">°C/min</span></div>
-          </div>
-          <div class="footer-item">
-            <div class="footer-label">Temps de chauffe</div>
-            <div class="footer-value" data-key="tempsChauffe">--<span class="unit">min</span></div>
-          </div>
-        </div>
+        <div class="next-slot" data-key="nextSlot">--</div>
       `;
 
     } else {
@@ -325,15 +245,9 @@ class ChauffageIntelligentCard extends HTMLElement {
           justify-content: space-between;
         }
 
-        .title {
-          font-size: 18px;
-          font-weight: 500;
-        }
-
         .room {
-          margin-top: 3px;
-          font-size: 14px;
-          color: var(--secondary-text-color);
+          font-size: 16px;
+          font-weight: 500;
         }
 
         .heating-badge {
@@ -404,63 +318,26 @@ class ChauffageIntelligentCard extends HTMLElement {
           color: var(--secondary-text-color);
         }
 
-        .status-row {
+        .humidity-row {
           display: flex;
-          gap: 8px;
-          margin-bottom: 16px;
-        }
-
-        .status-chip {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
           align-items: center;
-          gap: 4px;
-          background: var(--secondary-background-color);
-          border-radius: 8px;
-          padding: 8px 4px;
-          font-size: 11px;
+          justify-content: center;
+          gap: 6px;
+          font-size: 14px;
           color: var(--secondary-text-color);
-          text-align: center;
+          margin-bottom: 12px;
         }
 
-        .status-chip ha-icon {
+        .humidity-row ha-icon {
           --mdc-icon-size: 18px;
-          color: var(--secondary-text-color);
         }
 
-        .footer {
-          display: flex;
+        .next-slot {
+          text-align: center;
+          font-size: 13px;
+          color: var(--secondary-text-color);
           border-top: 1px solid var(--divider-color);
           padding-top: 10px;
-        }
-
-        .footer-secondary {
-          border-top: none;
-          padding-top: 4px;
-        }
-
-        .footer-item {
-          flex: 1;
-          text-align: center;
-        }
-
-        .footer-label {
-          font-size: 11px;
-          color: var(--secondary-text-color);
-        }
-
-        .footer-value {
-          margin-top: 2px;
-          font-size: 14px;
-          font-weight: 500;
-        }
-
-        .unit {
-          font-size: 11px;
-          font-weight: 400;
-          margin-left: 2px;
-          color: var(--secondary-text-color);
         }
 
         .empty {
@@ -473,10 +350,7 @@ class ChauffageIntelligentCard extends HTMLElement {
       <div class="card">
 
         <div class="header">
-          <div>
-            <div class="title">Chauffage</div>
-            <div class="room">${areaName}</div>
-          </div>
+          <div class="room">${areaName}</div>
           <div class="heating-badge" data-key="heatingBadge">
             <ha-icon icon="mdi:fire"></ha-icon>
             <span data-key="heatingLabel">--</span>
@@ -488,19 +362,10 @@ class ChauffageIntelligentCard extends HTMLElement {
       </div>
     `;
 
-    // On met en cache les nœuds à mettre à jour pour ne plus jamais
-    // avoir à régénérer le innerHTML entier ensuite.
     this._valueEls = entities
       ? {
-          coefficient: this.shadowRoot.querySelector('[data-key="coefficient"]'),
-          derive: this.shadowRoot.querySelector('[data-key="derive"]'),
-          heureAnticipee: this.shadowRoot.querySelector('[data-key="heureAnticipee"]'),
-          heurePlanning: this.shadowRoot.querySelector('[data-key="heurePlanning"]'),
-          heurePlanningPrecedent: this.shadowRoot.querySelector('[data-key="heurePlanningPrecedent"]'),
-          tempsChauffe: this.shadowRoot.querySelector('[data-key="tempsChauffe"]'),
           humidite: this.shadowRoot.querySelector('[data-key="humidite"]'),
-          aeration: this.shadowRoot.querySelector('[data-key="aeration"]'),
-          fenetreOuverte: this.shadowRoot.querySelector('[data-key="fenetreOuverte"]'),
+          nextSlot: this.shadowRoot.querySelector('[data-key="nextSlot"]'),
           dialValue: this.shadowRoot.querySelector('[data-key="dialValue"]'),
           dialSub: this.shadowRoot.querySelector('[data-key="dialSub"]'),
           dialProgress: this.shadowRoot.querySelector('[data-key="dialProgress"]'),
@@ -510,6 +375,7 @@ class ChauffageIntelligentCard extends HTMLElement {
       : null;
 
     this._entities = entities;
+    this._securiteEntity = securiteEntity;
     this._lastArea = area;
     this._rendered = true;
 
@@ -520,7 +386,6 @@ class ChauffageIntelligentCard extends HTMLElement {
   // MISE A JOUR DES VALEURS UNIQUEMENT
   // ==========================================================
   // Appelé à chaque update hass tant que la pièce ne change pas.
-  // Ne touche que le texte/attributs, pas toute la structure.
   // ==========================================================
 
   _updateValues() {
@@ -533,24 +398,22 @@ class ChauffageIntelligentCard extends HTMLElement {
     const circumference = 2 * Math.PI * 78;
 
     // --- Sécurité (pilote la couleur de l'anneau) ---
-    const securiteState = this._getState(this._entities.securite);
+    const securiteState = this._getState(this._securiteEntity);
     const ringColor = this._securityColorVar(securiteState);
 
-    // --- Entité climate de la pièce (si trouvée) ---
-    const climateState = this._climateEntityId
-      ? this._hass.states[this._climateEntityId]
-      : null;
+    // --- Entité climate choisie explicitement dans l'éditeur ---
+    const climateEntityId = this.config?.climate_entity || null;
+    const climateState = climateEntityId ? this._hass.states[climateEntityId] : null;
 
     const current = climateState?.attributes?.current_temperature;
     const target = climateState?.attributes?.temperature;
     const heating = climateState?.attributes?.hvac_action === "heating";
 
-    // --- Centre du cadran ---
     if (current !== undefined && current !== null) {
 
-      els.dialValue.textContent = `${current}°`;
+      els.dialValue.textContent = `${Number(current).toFixed(1)}°`;
       els.dialSub.textContent = target !== undefined && target !== null
-        ? `consigne ${target}°`
+        ? `consigne ${Number(target).toFixed(1)}°`
         : "consigne --";
 
       const ratio = target !== undefined && target !== null
@@ -561,11 +424,10 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     } else {
 
-      // Repli : pas d'entité climate trouvée pour la pièce,
-      // on affiche le temps de chauffe estimé à la place.
-      const tempsChauffe = this._formatValue(this._getState(this._entities.tempsChauffe));
-      els.dialValue.textContent = tempsChauffe;
-      els.dialSub.textContent = "min de chauffe estimées";
+      els.dialValue.textContent = "--";
+      els.dialSub.textContent = climateEntityId
+        ? "--"
+        : "thermostat non configuré";
       els.dialProgress.style.strokeDashoffset = "0";
     }
 
@@ -578,32 +440,15 @@ class ChauffageIntelligentCard extends HTMLElement {
     }
     els.heatingLabel.textContent = heating ? "Chauffe" : "Éteint";
 
-    // --- Humidité ---
-    const humidite = this._formatValue(this._getState(this._entities.humidite));
-    els.humidite.textContent = humidite === "--" ? "--" : `${humidite}%`;
+    // --- Humidité (valeur numérique brute) ---
+    const humiditeRaw = this._getState(this._entities.humidite);
+    const humiditeValue = parseFloat(humiditeRaw);
+    els.humidite.textContent = Number.isFinite(humiditeValue)
+      ? `${Math.round(humiditeValue)}%`
+      : "--";
 
-    // --- Aération ---
-    els.aeration.textContent = this._formatValue(this._getState(this._entities.aeration));
-
-    // --- Fenêtre ---
-    const fenetreState = this._getState(this._entities.fenetreOuverte);
-    els.fenetreOuverte.textContent = fenetreState === "on"
-      ? "Ouverte"
-      : fenetreState === "off"
-        ? "Fermée"
-        : "--";
-
-    // --- Footer (mise à jour simple, pas de diff nécessaire ici) ---
-    els.heurePlanning.textContent = this._formatValue(this._getState(this._entities.heurePlanning));
-    els.heurePlanningPrecedent.textContent = this._formatValue(this._getState(this._entities.heurePlanningPrecedent));
-    els.heureAnticipee.textContent = this._formatValue(this._getState(this._entities.heureAnticipee));
-    els.coefficient.textContent = this._formatValue(this._getState(this._entities.coefficient));
-
-    const deriveValue = this._formatValue(this._getState(this._entities.derive));
-    els.derive.firstChild.textContent = deriveValue;
-
-    const tempsChauffeValue = this._formatValue(this._getState(this._entities.tempsChauffe));
-    els.tempsChauffe.firstChild.textContent = tempsChauffeValue;
+    // --- Prochain créneau ---
+    els.nextSlot.textContent = `Prochain ${this._formatPlanningSlot(this._getState(this._entities.heurePlanning))}`;
   }
 
   // ==========================================================
@@ -616,7 +461,8 @@ class ChauffageIntelligentCard extends HTMLElement {
 
   static getStubConfig() {
     return {
-      area: ""
+      area: "",
+      climate_entity: "",
     };
   }
 
@@ -625,7 +471,7 @@ class ChauffageIntelligentCard extends HTMLElement {
   // ==========================================================
 
   getCardSize() {
-    return 5;
+    return 4;
   }
 }
 
@@ -642,7 +488,8 @@ class ChauffageIntelligentCardEditor extends HTMLElement {
     this.attachShadow({ mode: "open" });
 
     this._built = false;
-    this._selector = null;
+    this._areaSelector = null;
+    this._climateSelector = null;
   }
 
   setConfig(config) {
@@ -653,8 +500,12 @@ class ChauffageIntelligentCardEditor extends HTMLElement {
       this._config.area = "";
     }
 
+    if (!this._config.climate_entity) {
+      this._config.climate_entity = "";
+    }
+
     this._build();
-    this._updateSelector();
+    this._updateSelectors();
   }
 
   set hass(hass) {
@@ -665,7 +516,7 @@ class ChauffageIntelligentCardEditor extends HTMLElement {
       this._build();
     }
 
-    this._updateSelector();
+    this._updateSelectors();
   }
 
   get hass() {
@@ -686,6 +537,10 @@ class ChauffageIntelligentCardEditor extends HTMLElement {
           padding: 8px 0 16px 0;
         }
 
+        .field {
+          margin-bottom: 16px;
+        }
+
         .title {
           font-size: 14px;
           font-weight: 500;
@@ -693,7 +548,7 @@ class ChauffageIntelligentCardEditor extends HTMLElement {
         }
 
         .info {
-          margin-top: 10px;
+          margin-top: 6px;
           font-size: 12px;
           color: var(--secondary-text-color, #999999);
         }
@@ -701,24 +556,45 @@ class ChauffageIntelligentCardEditor extends HTMLElement {
       </style>
 
       <div class="container">
-        <div class="title">Pièce</div>
-        <ha-selector id="area-selector"></ha-selector>
-        <div class="info">
-          Les entités du chauffage sont sélectionnées
-          automatiquement selon la pièce.
+        <div class="field">
+          <div class="title">Pièce</div>
+          <ha-selector id="area-selector"></ha-selector>
+          <div class="info">
+            Les entités (humidité, planning...) sont sélectionnées
+            automatiquement selon la pièce.
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="title">Thermostat de la pièce</div>
+          <ha-selector id="climate-selector"></ha-selector>
+          <div class="info">
+            À choisir explicitement : en chauffage gaz, la vanne est
+            aussi une entité climate, donc elle n'est pas devinée
+            automatiquement.
+          </div>
         </div>
       </div>
     `;
 
-    this._selector = this.shadowRoot.querySelector("#area-selector");
+    this._areaSelector = this.shadowRoot.querySelector("#area-selector");
+    this._climateSelector = this.shadowRoot.querySelector("#climate-selector");
 
-    this._selector.addEventListener("value-changed", (event) => {
-
-      const areaId = event.detail.value || "";
+    this._areaSelector.addEventListener("value-changed", (event) => {
 
       this._config = {
         ...this._config,
-        area: areaId
+        area: event.detail.value || "",
+      };
+
+      this._fireConfigChanged();
+    });
+
+    this._climateSelector.addEventListener("value-changed", (event) => {
+
+      this._config = {
+        ...this._config,
+        climate_entity: event.detail.value || "",
       };
 
       this._fireConfigChanged();
@@ -727,15 +603,19 @@ class ChauffageIntelligentCardEditor extends HTMLElement {
     this._built = true;
   }
 
-  _updateSelector() {
+  _updateSelectors() {
 
-    if (!this._selector || !this._hass) {
+    if (!this._areaSelector || !this._climateSelector || !this._hass) {
       return;
     }
 
-    this._selector.hass = this._hass;
-    this._selector.selector = { area: {} };
-    this._selector.value = this._config?.area || "";
+    this._areaSelector.hass = this._hass;
+    this._areaSelector.selector = { area: {} };
+    this._areaSelector.value = this._config?.area || "";
+
+    this._climateSelector.hass = this._hass;
+    this._climateSelector.selector = { entity: { domain: "climate" } };
+    this._climateSelector.value = this._config?.climate_entity || "";
   }
 
   _fireConfigChanged() {
