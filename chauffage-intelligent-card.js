@@ -734,3 +734,450 @@ if (!window.customCards.some(card => card.type === "chauffage-intelligent-card")
     preview: true
   });
 }
+
+
+// =============================================================
+// CARTE CENTRALE (à coller À LA SUITE du code existant, dans
+// le même fichier chauffage-intelligent-card.js)
+// =============================================================
+//
+// Aucune configuration nécessaire : les entités sont retrouvées
+// automatiquement via les noms fixes créés par l'intégration :
+//
+//   switch.chauffage_general          -> marche/arrêt général (bouton)
+//   sensor.pieces_en_chauffe          -> état = nb de pièces en chauffe,
+//                                        attribut "total" = nb de pièces
+//   sensor.mode_maison_chauffage      -> mode actuel de la maison
+//   binary_sensor.chaudiere_chauffage -> état de la chaudière (gaz
+//                                        uniquement : si l'entité n'existe
+//                                        pas, le bloc est masqué)
+//
+// =============================================================
+
+class ChauffageIntelligentCentralCard extends HTMLElement {
+
+  constructor() {
+    super();
+
+    this.attachShadow({ mode: "open" });
+    this._built = false;
+    this._els = null;
+  }
+
+  setConfig(config) {
+
+    this.config = config || {};
+
+    if (this._hass) {
+      this._update();
+    }
+  }
+
+  set hass(hass) {
+
+    this._hass = hass;
+
+    if (!this._built) {
+      this._build();
+    }
+
+    this._update();
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  // ==========================================================
+  // ENTITES (noms fixes, surchargeables via config.entities)
+  // ==========================================================
+
+  _ids() {
+
+    const custom = this.config?.entities || {};
+
+    return {
+      master: custom.master || "switch.chauffage_general",
+      pieces: custom.pieces || "sensor.pieces_en_chauffe",
+      mode: custom.mode || "sensor.mode_maison_chauffage",
+      chaudiere: custom.chaudiere || "binary_sensor.chaudiere_chauffage",
+    };
+  }
+
+  // ==========================================================
+  // CONSTRUCTION (une seule fois)
+  // ==========================================================
+
+  _build() {
+
+    this.shadowRoot.innerHTML = `
+
+      <style>
+
+        :host {
+          display: block;
+        }
+
+        .card {
+          background: var(--ha-card-background, var(--card-background-color));
+          border: 1px solid var(--divider-color);
+          border-radius: var(--ha-card-border-radius, 12px);
+          padding: 16px;
+          box-sizing: border-box;
+          color: var(--primary-text-color);
+          display: flex;
+          align-items: center;
+          gap: 16px;
+        }
+
+        .left {
+          flex: 1;
+          min-width: 0;
+        }
+
+        .title {
+          font-size: 16px;
+          font-weight: 500;
+        }
+
+        .gauge-wrap {
+          position: relative;
+          width: 180px;
+          max-width: 100%;
+          margin: 8px auto 4px;
+        }
+
+        .gauge-svg {
+          width: 100%;
+          display: block;
+        }
+
+        .gauge-track,
+        .gauge-progress {
+          fill: none;
+          stroke-width: 12;
+          stroke-linecap: round;
+        }
+
+        .gauge-track {
+          stroke: var(--divider-color);
+        }
+
+        .gauge-progress {
+          stroke: var(--disabled-text-color, #9e9e9e);
+          transition: stroke-dasharray 0.4s ease, stroke 0.4s ease;
+        }
+
+        .gauge-progress.active {
+          stroke: var(--success-color, #4caf50);
+        }
+
+        .gauge-center {
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          text-align: center;
+        }
+
+        .gauge-value {
+          font-size: 30px;
+          font-weight: 500;
+          line-height: 1;
+        }
+
+        .gauge-sub {
+          margin-top: 4px;
+          font-size: 12px;
+          color: var(--secondary-text-color);
+        }
+
+        .chips {
+          display: flex;
+          gap: 8px;
+          margin-top: 12px;
+        }
+
+        .chip {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          background: var(--secondary-background-color);
+          border-radius: 8px;
+          padding: 8px 4px;
+          font-size: 11px;
+          color: var(--secondary-text-color);
+          text-align: center;
+        }
+
+        .chip ha-icon {
+          --mdc-icon-size: 18px;
+        }
+
+        .chip.hidden {
+          display: none;
+        }
+
+        .right {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+        }
+
+        .power-btn {
+          width: 72px;
+          height: 72px;
+          border-radius: 50%;
+          border: none;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: #fff;
+          background: var(--disabled-text-color, #9e9e9e);
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+          transition: background 0.3s ease, transform 0.1s ease;
+          --mdc-icon-size: 34px;
+        }
+
+        .power-btn:active {
+          transform: scale(0.94);
+        }
+
+        .power-btn.on {
+          background: var(--success-color, #4caf50);
+        }
+
+        .power-btn.off {
+          background: var(--error-color, #f44336);
+        }
+
+        .power-btn.na {
+          cursor: not-allowed;
+        }
+
+        .power-label {
+          font-size: 12px;
+          color: var(--secondary-text-color);
+        }
+
+      </style>
+
+      <div class="card">
+
+        <div class="left">
+
+          <div class="title">Chauffage</div>
+
+          <div class="gauge-wrap">
+            <svg viewBox="0 0 180 100" class="gauge-svg">
+              <path class="gauge-track" d="M 15 90 A 75 75 0 0 1 165 90" pathLength="100" />
+              <path class="gauge-progress" data-key="gaugeProgress" d="M 15 90 A 75 75 0 0 1 165 90" pathLength="100" stroke-dasharray="0 100" />
+            </svg>
+            <div class="gauge-center">
+              <div class="gauge-value" data-key="gaugeValue">--</div>
+              <div class="gauge-sub" data-key="gaugeSub">pièces en chauffe</div>
+            </div>
+          </div>
+
+          <div class="chips">
+            <div class="chip">
+              <ha-icon icon="mdi:home-switch-outline"></ha-icon>
+              <span data-key="mode">--</span>
+            </div>
+            <div class="chip hidden" data-key="chaudiereChip">
+              <ha-icon icon="mdi:fire" data-key="chaudiereIcon"></ha-icon>
+              <span data-key="chaudiere">--</span>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="right">
+          <button class="power-btn na" data-key="powerBtn" aria-label="Marche / arrêt du chauffage">
+            <ha-icon icon="mdi:power"></ha-icon>
+          </button>
+          <div class="power-label" data-key="powerLabel">--</div>
+        </div>
+
+      </div>
+    `;
+
+    const q = (key) => this.shadowRoot.querySelector(`[data-key="${key}"]`);
+
+    this._els = {
+      gaugeProgress: q("gaugeProgress"),
+      gaugeValue: q("gaugeValue"),
+      gaugeSub: q("gaugeSub"),
+      mode: q("mode"),
+      chaudiereChip: q("chaudiereChip"),
+      chaudiereIcon: q("chaudiereIcon"),
+      chaudiere: q("chaudiere"),
+      powerBtn: q("powerBtn"),
+      powerLabel: q("powerLabel"),
+    };
+
+    this._els.powerBtn.addEventListener("click", () => this._togglePower());
+
+    this._built = true;
+  }
+
+  // ==========================================================
+  // BOUTON MARCHE / ARRET
+  // ==========================================================
+
+  _togglePower() {
+
+    const id = this._ids().master;
+    const st = this._hass?.states?.[id];
+
+    if (!st || st.state === "unavailable" || st.state === "unknown") {
+      return;
+    }
+
+    const domain = id.split(".")[0];
+
+    this._hass.callService(domain, st.state === "on" ? "turn_off" : "turn_on", {
+      entity_id: id,
+    });
+  }
+
+  // ==========================================================
+  // MISE A JOUR DES VALEURS
+  // ==========================================================
+
+  _update() {
+
+    if (!this._els || !this._hass) {
+      return;
+    }
+
+    const ids = this._ids();
+    const states = this._hass.states;
+    const els = this._els;
+
+    // --- Bouton rond ---
+    const master = states[ids.master];
+    const masterState = master?.state;
+    const available = master && masterState !== "unavailable" && masterState !== "unknown";
+    const isOn = masterState === "on";
+
+    els.powerBtn.classList.toggle("on", available && isOn);
+    els.powerBtn.classList.toggle("off", available && !isOn);
+    els.powerBtn.classList.toggle("na", !available);
+    els.powerLabel.textContent = !available ? "--" : isOn ? "Allumé" : "Éteint";
+
+    // --- Jauge : pièces en chauffe ---
+    const pieces = states[ids.pieces];
+    const count = parseInt(pieces?.state, 10);
+    const total = parseInt(pieces?.attributes?.total, 10);
+
+    if (Number.isFinite(count)) {
+
+      const ratio = Number.isFinite(total) && total > 0
+        ? Math.min(count / total, 1)
+        : (count > 0 ? 1 : 0);
+
+      els.gaugeValue.textContent = Number.isFinite(total) ? `${count}/${total}` : `${count}`;
+      els.gaugeSub.textContent = count > 1 ? "pièces en chauffe" : "pièce en chauffe";
+      els.gaugeProgress.setAttribute("stroke-dasharray", `${ratio * 100} 100`);
+      els.gaugeProgress.classList.toggle("active", count > 0);
+
+    } else {
+
+      els.gaugeValue.textContent = "--";
+      els.gaugeSub.textContent = "pièces en chauffe";
+      els.gaugeProgress.setAttribute("stroke-dasharray", "0 100");
+      els.gaugeProgress.classList.remove("active");
+    }
+
+    // --- Mode de la maison ---
+    const mode = states[ids.mode]?.state;
+    els.mode.textContent = mode && mode !== "unknown" && mode !== "unavailable" ? mode : "--";
+
+    // --- Chaudière (masquée si l'entité n'existe pas = chauffage électrique) ---
+    const chaudiere = states[ids.chaudiere];
+
+    els.chaudiereChip.classList.toggle("hidden", !chaudiere);
+
+    if (chaudiere) {
+
+      const on = chaudiere.state === "on";
+
+      els.chaudiere.textContent = on ? "Chaudière allumée" : "Chaudière éteinte";
+      els.chaudiereIcon.setAttribute("icon", on ? "mdi:fire" : "mdi:fire-off");
+    }
+  }
+
+  // ==========================================================
+  // EDITEUR / TAILLE
+  // ==========================================================
+
+  static getConfigElement() {
+    return document.createElement("chauffage-intelligent-central-card-editor");
+  }
+
+  static getStubConfig() {
+    return {};
+  }
+
+  getCardSize() {
+    return 3;
+  }
+}
+
+
+// =============================================================
+// EDITEUR (rien à configurer : tout est automatique)
+// =============================================================
+
+class ChauffageIntelligentCentralCardEditor extends HTMLElement {
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+  }
+
+  setConfig(config) {
+
+    this._config = config || {};
+
+    this.shadowRoot.innerHTML = `
+      <div style="padding: 8px 0 16px 0; font-size: 12px; color: var(--secondary-text-color, #999999);">
+        Cette carte se configure toute seule à partir des entités
+        centrales de l'intégration Chauffage intelligent.
+      </div>
+    `;
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+  }
+}
+
+
+// =============================================================
+// ENREGISTREMENT
+// =============================================================
+
+if (!customElements.get("chauffage-intelligent-central-card-editor")) {
+  customElements.define("chauffage-intelligent-central-card-editor", ChauffageIntelligentCentralCardEditor);
+}
+
+if (!customElements.get("chauffage-intelligent-central-card")) {
+  customElements.define("chauffage-intelligent-central-card", ChauffageIntelligentCentralCard);
+}
+
+window.customCards = window.customCards || [];
+
+if (!window.customCards.some(card => card.type === "chauffage-intelligent-central-card")) {
+  window.customCards.push({
+    type: "chauffage-intelligent-central-card",
+    name: "Chauffage intelligent - Central",
+    description: "Marche/arrêt général, pièces en chauffe, mode de la maison et chaudière",
+    preview: true
+  });
+}
