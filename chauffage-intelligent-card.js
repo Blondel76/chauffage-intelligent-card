@@ -747,10 +747,13 @@ if (!window.customCards.some(card => card.type === "chauffage-intelligent-card")
 //   switch.chauffage_general          -> marche/arrêt général (bouton)
 //   sensor.pieces_en_chauffe          -> état = nb de pièces en chauffe,
 //                                        attribut "total" = nb de pièces
-//   sensor.mode_maison_chauffage      -> mode actuel de la maison
-//   binary_sensor.chaudiere_chauffage -> état de la chaudière (gaz
-//                                        uniquement : si l'entité n'existe
-//                                        pas, le bloc est masqué)
+//
+// Le mode de la maison et la chaudière ne sont PAS à nom fixe : ce sont
+// les entités choisies par l'utilisateur dans la config centrale. Le
+// switch général les publie dans ses attributs :
+//   mode_entity   -> ex. input_select.mode_presence_maison
+//   boiler_entity -> ex. switch.ma_chaudiere (absent en électrique :
+//                    le bloc chaudière est alors masqué)
 //
 // =============================================================
 
@@ -796,11 +799,18 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
     const custom = this.config?.entities || {};
 
+    const master = custom.master || "switch.chauffage_general";
+
+    // Le switch général publie la config centrale de l'intégration :
+    //   mode_entity   -> entité du sélecteur de mode choisie par l'utilisateur
+    //   boiler_entity -> entité chaudière choisie (absente en électrique)
+    const attrs = this._hass?.states?.[master]?.attributes || {};
+
     return {
-      master: custom.master || "switch.chauffage_general",
+      master,
       pieces: custom.pieces || "sensor.pieces_en_chauffe",
-      mode: custom.mode || "sensor.mode_maison_chauffage",
-      chaudiere: custom.chaudiere || "binary_sensor.chaudiere_chauffage",
+      mode: custom.mode || attrs.mode_entity || null,
+      chaudiere: custom.chaudiere || attrs.boiler_entity || null,
     };
   }
 
