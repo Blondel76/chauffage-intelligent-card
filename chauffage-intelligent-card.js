@@ -850,58 +850,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           font-weight: 500;
         }
 
-        .gauge-wrap {
-          position: relative;
-          width: 180px;
-          max-width: 100%;
-          margin: 8px auto 4px;
-        }
-
-        .gauge-svg {
-          width: 100%;
-          display: block;
-        }
-
-        .gauge-track,
-        .gauge-progress {
-          fill: none;
-          stroke-width: 12;
-          stroke-linecap: round;
-        }
-
-        .gauge-track {
-          stroke: var(--divider-color);
-        }
-
-        .gauge-progress {
-          stroke: var(--disabled-text-color, #9e9e9e);
-          transition: stroke-dasharray 0.4s ease, stroke 0.4s ease;
-        }
-
-        .gauge-progress.active {
-          stroke: var(--success-color, #4caf50);
-        }
-
-        .gauge-center {
-          position: absolute;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          text-align: center;
-        }
-
-        .gauge-value {
-          font-size: 30px;
-          font-weight: 500;
-          line-height: 1;
-        }
-
-        .gauge-sub {
-          margin-top: 4px;
-          font-size: 12px;
-          color: var(--secondary-text-color);
-        }
-
         .chips {
           display: flex;
           gap: 8px;
@@ -928,6 +876,15 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
         .chip.hidden {
           display: none;
+        }
+
+        .chip.ok ha-icon {
+          color: var(--success-color, #4caf50);
+        }
+
+        .chip.error ha-icon,
+        .chip.error {
+          color: var(--error-color, #f44336);
         }
 
         .right {
@@ -982,17 +939,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
           <div class="title">Chauffage</div>
 
-          <div class="gauge-wrap">
-            <svg viewBox="0 0 180 100" class="gauge-svg">
-              <path class="gauge-track" d="M 15 90 A 75 75 0 0 1 165 90" pathLength="100" />
-              <path class="gauge-progress" data-key="gaugeProgress" d="M 15 90 A 75 75 0 0 1 165 90" pathLength="100" stroke-dasharray="0 100" />
-            </svg>
-            <div class="gauge-center">
-              <div class="gauge-value" data-key="gaugeValue">--</div>
-              <div class="gauge-sub" data-key="gaugeSub">pièces en chauffe</div>
-            </div>
-          </div>
-
           <div class="chips">
             <div class="chip">
               <ha-icon icon="mdi:home-switch-outline"></ha-icon>
@@ -1005,16 +951,16 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           </div>
 
           <div class="chips">
-            <div class="chip">
+            <div class="chip" data-key="chauffeChip">
               <ha-icon icon="mdi:radiator"></ha-icon>
-              <span data-key="demande">--</span>
+              <span data-key="enChauffe">--</span>
             </div>
-            <div class="chip">
-              <ha-icon icon="mdi:snowflake"></ha-icon>
+            <div class="chip" data-key="froidesChip">
+              <ha-icon icon="mdi:snowflake-alert"></ha-icon>
               <span data-key="froides">--</span>
             </div>
-            <div class="chip">
-              <ha-icon icon="mdi:thermometer-high"></ha-icon>
+            <div class="chip" data-key="chaudesChip">
+              <ha-icon icon="mdi:thermometer-alert"></ha-icon>
               <span data-key="chaudes">--</span>
             </div>
           </div>
@@ -1034,18 +980,18 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     const q = (key) => this.shadowRoot.querySelector(`[data-key="${key}"]`);
 
     this._els = {
-      gaugeProgress: q("gaugeProgress"),
-      gaugeValue: q("gaugeValue"),
-      gaugeSub: q("gaugeSub"),
       mode: q("mode"),
       chaudiereChip: q("chaudiereChip"),
       chaudiereIcon: q("chaudiereIcon"),
       chaudiere: q("chaudiere"),
       powerBtn: q("powerBtn"),
       powerLabel: q("powerLabel"),
-      demande: q("demande"),
+      enChauffe: q("enChauffe"),
+      chauffeChip: q("chauffeChip"),
       froides: q("froides"),
+      froidesChip: q("froidesChip"),
       chaudes: q("chaudes"),
+      chaudesChip: q("chaudesChip"),
     };
 
     this._els.powerBtn.addEventListener("click", () => this._togglePower());
@@ -1097,7 +1043,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
   _roomStats() {
 
     const prefix = "sensor.securite_";
-    const seuilFroid = Number(this.config?.seuil_froid ?? 1);
+    const seuil = Number(this.config?.seuil_ecart ?? 1);
 
     const areas = Object.keys(this._hass.states)
       .filter((id) => id.startsWith(prefix) && id !== "sensor.securite_chauffage")
@@ -1107,7 +1053,9 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       return null;
     }
 
-    const stats = { heating: 0, demande: 0, froides: 0, chaudes: 0, total: areas.length };
+    // froides = pièces trop froides (erreur de température)
+    // chaudes = pièces trop chaudes (erreur de température)
+    const stats = { heating: 0, froides: 0, chaudes: 0, total: areas.length };
 
     for (const area of areas) {
 
@@ -1120,7 +1068,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
       if (attrs.hvac_action === "heating") {
         stats.heating++;
-        stats.demande++;
       }
 
       const current = Number(attrs.current_temperature);
@@ -1130,10 +1077,10 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
         continue;
       }
 
-      if (current >= target) {
-        stats.chaudes++;
-      } else if (current <= target - seuilFroid) {
+      if (current <= target - seuil) {
         stats.froides++;
+      } else if (current >= target + seuil) {
+        stats.chaudes++;
       }
     }
 
@@ -1181,7 +1128,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     els.powerBtn.classList.toggle("na", !available);
     els.powerLabel.textContent = !available ? "--" : isOn ? "Allumé" : "Éteint";
 
-    // --- Jauge : pièces en chauffe ---
+    // --- Pièces en chauffe / froides / chaudes ---
     const pieces = states[ids.pieces];
     let count = parseInt(pieces?.state, 10);
     let total = parseInt(pieces?.attributes?.total, 10);
@@ -1193,28 +1140,18 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       total = stats.total;
     }
 
-    els.demande.textContent = stats ? `${stats.demande} en demande` : "--";
-    els.froides.textContent = stats ? `${stats.froides} froide${stats.froides > 1 ? "s" : ""}` : "--";
-    els.chaudes.textContent = stats ? `${stats.chaudes} chaude${stats.chaudes > 1 ? "s" : ""}` : "--";
+    els.enChauffe.textContent = Number.isFinite(count)
+      ? (Number.isFinite(total) ? `${count}/${total} en chauffe` : `${count} en chauffe`)
+      : "--";
+    els.chauffeChip.classList.toggle("ok", Number.isFinite(count) && count > 0);
 
-    if (Number.isFinite(count)) {
+    const froides = stats ? stats.froides : null;
+    const chaudes = stats ? stats.chaudes : null;
 
-      const ratio = Number.isFinite(total) && total > 0
-        ? Math.min(count / total, 1)
-        : (count > 0 ? 1 : 0);
-
-      els.gaugeValue.textContent = Number.isFinite(total) ? `${count}/${total}` : `${count}`;
-      els.gaugeSub.textContent = count > 1 ? "pièces en chauffe" : "pièce en chauffe";
-      els.gaugeProgress.setAttribute("stroke-dasharray", `${ratio * 100} 100`);
-      els.gaugeProgress.classList.toggle("active", count > 0);
-
-    } else {
-
-      els.gaugeValue.textContent = "--";
-      els.gaugeSub.textContent = "pièces en chauffe";
-      els.gaugeProgress.setAttribute("stroke-dasharray", "0 100");
-      els.gaugeProgress.classList.remove("active");
-    }
+    els.froides.textContent = stats ? `${froides} trop froide${froides > 1 ? "s" : ""}` : "--";
+    els.chaudes.textContent = stats ? `${chaudes} trop chaude${chaudes > 1 ? "s" : ""}` : "--";
+    els.froidesChip.classList.toggle("error", froides > 0);
+    els.chaudesChip.classList.toggle("error", chaudes > 0);
 
     // --- Mode de la maison ---
     const mode = states[ids.mode]?.state;
