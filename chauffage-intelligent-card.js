@@ -1039,6 +1039,69 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
   // BOUTON MARCHE / ARRET
   // ==========================================================
 
+  // Pièces = une par sensor.securite_<area> (créé par l'intégration).
+  // Une pièce chauffe si son thermostat est en hvac_action "heating".
+  _findClimate(area) {
+
+    const entities = this._hass.entities;
+    const devices = this._hass.devices;
+
+    if (!entities) {
+      return null;
+    }
+
+    const candidates = [];
+
+    for (const [entityId, entry] of Object.entries(entities)) {
+
+      if (!entityId.startsWith("climate.")) {
+        continue;
+      }
+
+      const entityArea = entry.area_id
+        || (devices && entry.device_id ? devices[entry.device_id]?.area_id : null);
+
+      if (entityArea === area) {
+        candidates.push(entityId);
+      }
+    }
+
+    if (candidates.length <= 1) {
+      return candidates[0] || null;
+    }
+
+    return candidates.find((id) => {
+      const presets = this._hass.states[id]?.attributes?.preset_modes;
+      return Array.isArray(presets) && presets.length > 0;
+    }) || candidates[0];
+  }
+
+  _countRooms() {
+
+    const prefix = "sensor.securite_";
+
+    const areas = Object.keys(this._hass.states)
+      .filter((id) => id.startsWith(prefix) && id !== "sensor.securite_chauffage")
+      .map((id) => id.slice(prefix.length));
+
+    if (areas.length === 0) {
+      return null;
+    }
+
+    let heating = 0;
+
+    for (const area of areas) {
+
+      const climateId = this._findClimate(area);
+
+      if (climateId && this._hass.states[climateId]?.attributes?.hvac_action === "heating") {
+        heating++;
+      }
+    }
+
+    return { count: heating, total: areas.length };
+  }
+
   _togglePower() {
 
     const id = this._ids().master;
@@ -1082,8 +1145,18 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
     // --- Jauge : pièces en chauffe ---
     const pieces = states[ids.pieces];
-    const count = parseInt(pieces?.state, 10);
-    const total = parseInt(pieces?.attributes?.total, 10);
+    let count = parseInt(pieces?.state, 10);
+    let total = parseInt(pieces?.attributes?.total, 10);
+
+    if (!Number.isFinite(count)) {
+
+      const auto = this._countRooms();
+
+      if (auto) {
+        count = auto.count;
+        total = auto.total;
+      }
+    }
 
     if (Number.isFinite(count)) {
 
