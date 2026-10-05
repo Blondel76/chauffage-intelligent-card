@@ -809,8 +809,8 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     return {
       master,
       pieces: custom.pieces || "sensor.pieces_en_chauffe",
-      mode: custom.mode || attrs.mode_entity || null,
-      chaudiere: custom.chaudiere || attrs.boiler_entity || null,
+      mode: this.config?.mode_entity || custom.mode || attrs.mode_entity || null,
+      chaudiere: this.config?.boiler_entity || custom.chaudiere || attrs.boiler_entity || null,
     };
   }
 
@@ -1004,6 +1004,21 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
             </div>
           </div>
 
+          <div class="chips">
+            <div class="chip">
+              <ha-icon icon="mdi:radiator"></ha-icon>
+              <span data-key="demande">--</span>
+            </div>
+            <div class="chip">
+              <ha-icon icon="mdi:snowflake"></ha-icon>
+              <span data-key="froides">--</span>
+            </div>
+            <div class="chip">
+              <ha-icon icon="mdi:thermometer-high"></ha-icon>
+              <span data-key="chaudes">--</span>
+            </div>
+          </div>
+
         </div>
 
         <div class="right">
@@ -1028,6 +1043,9 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       chaudiere: q("chaudiere"),
       powerBtn: q("powerBtn"),
       powerLabel: q("powerLabel"),
+      demande: q("demande"),
+      froides: q("froides"),
+      chaudes: q("chaudes"),
     };
 
     this._els.powerBtn.addEventListener("click", () => this._togglePower());
@@ -1076,9 +1094,10 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     }) || candidates[0];
   }
 
-  _countRooms() {
+  _roomStats() {
 
     const prefix = "sensor.securite_";
+    const seuilFroid = Number(this.config?.seuil_froid ?? 1);
 
     const areas = Object.keys(this._hass.states)
       .filter((id) => id.startsWith(prefix) && id !== "sensor.securite_chauffage")
@@ -1088,18 +1107,37 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       return null;
     }
 
-    let heating = 0;
+    const stats = { heating: 0, demande: 0, froides: 0, chaudes: 0, total: areas.length };
 
     for (const area of areas) {
 
       const climateId = this._findClimate(area);
+      const attrs = climateId ? this._hass.states[climateId]?.attributes : null;
 
-      if (climateId && this._hass.states[climateId]?.attributes?.hvac_action === "heating") {
-        heating++;
+      if (!attrs) {
+        continue;
+      }
+
+      if (attrs.hvac_action === "heating") {
+        stats.heating++;
+        stats.demande++;
+      }
+
+      const current = Number(attrs.current_temperature);
+      const target = Number(attrs.temperature);
+
+      if (!Number.isFinite(current) || !Number.isFinite(target)) {
+        continue;
+      }
+
+      if (current >= target) {
+        stats.chaudes++;
+      } else if (current <= target - seuilFroid) {
+        stats.froides++;
       }
     }
 
-    return { count: heating, total: areas.length };
+    return stats;
   }
 
   _togglePower() {
@@ -1148,15 +1186,16 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     let count = parseInt(pieces?.state, 10);
     let total = parseInt(pieces?.attributes?.total, 10);
 
-    if (!Number.isFinite(count)) {
+    const stats = this._roomStats();
 
-      const auto = this._countRooms();
-
-      if (auto) {
-        count = auto.count;
-        total = auto.total;
-      }
+    if (!Number.isFinite(count) && stats) {
+      count = stats.heating;
+      total = stats.total;
     }
+
+    els.demande.textContent = stats ? `${stats.demande} en demande` : "--";
+    els.froides.textContent = stats ? `${stats.froides} froide${stats.froides > 1 ? "s" : ""}` : "--";
+    els.chaudes.textContent = stats ? `${stats.chaudes} chaude${stats.chaudes > 1 ? "s" : ""}` : "--";
 
     if (Number.isFinite(count)) {
 
@@ -1214,7 +1253,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
 
 // =============================================================
-// EDITEUR (rien à configurer : tout est automatique)
+// EDITEUR (choix du mode de la maison et de la chaudière)
 // =============================================================
 
 class ChauffageIntelligentCentralCardEditor extends HTMLElement {
@@ -1222,25 +1261,94 @@ class ChauffageIntelligentCentralCardEditor extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
+    this._built = false;
   }
 
   setConfig(config) {
-
-    this._config = config || {};
-
-    this.shadowRoot.innerHTML = `
-      <div style="padding: 8px 0 16px 0; font-size: 12px; color: var(--secondary-text-color, #999999);">
-        Cette carte se configure toute seule à partir des entités
-        centrales de l'intégration Chauffage intelligent.
-      </div>
-    `;
+    this._config = { ...(config || {}) };
+    this._build();
+    this._sync();
   }
 
   set hass(hass) {
     this._hass = hass;
+    this._build();
+    this._sync();
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  _build() {
+
+    if (this._built) {
+      return;
+    }
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        .container { padding: 8px 0 16px 0; }
+        .title { font-size: 14px; font-weight: 500; margin: 12px 0 8px; }
+        .info { margin-top: 10px; font-size: 12px; color: var(--secondary-text-color, #999999); }
+      </style>
+      <div class="container">
+        <div class="title">Mode de la maison</div>
+        <ha-selector id="mode"></ha-selector>
+        <div class="title">Chaudière (laisser vide en chauffage électrique)</div>
+        <ha-selector id="boiler"></ha-selector>
+        <div class="info">
+          Si un champ est vide, la carte utilise l'entité publiée par
+          le switch général de l'intégration.
+        </div>
+      </div>
+    `;
+
+    this._mode = this.shadowRoot.querySelector("#mode");
+    this._boiler = this.shadowRoot.querySelector("#boiler");
+
+    this._mode.selector = { entity: { domain: ["input_select", "select", "sensor"] } };
+    this._boiler.selector = { entity: { domain: ["switch", "input_boolean", "binary_sensor", "climate"] } };
+
+    this._mode.addEventListener("value-changed", (e) => this._changed("mode_entity", e.detail.value));
+    this._boiler.addEventListener("value-changed", (e) => this._changed("boiler_entity", e.detail.value));
+
+    this._built = true;
+  }
+
+  _sync() {
+
+    if (!this._built || !this._hass || !this._config) {
+      return;
+    }
+
+    this._mode.hass = this._hass;
+    this._boiler.hass = this._hass;
+    this._mode.value = this._config.mode_entity || "";
+    this._boiler.value = this._config.boiler_entity || "";
+  }
+
+  _changed(key, value) {
+
+    const config = { ...this._config };
+
+    if (value) {
+      config[key] = value;
+    } else {
+      delete config[key];
+    }
+
+    this._config = config;
+
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config },
+        bubbles: true,
+        composed: true,
+      })
+    );
   }
 }
-
 
 // =============================================================
 // ENREGISTREMENT
