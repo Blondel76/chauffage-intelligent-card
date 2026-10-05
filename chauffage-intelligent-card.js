@@ -959,10 +959,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
               <ha-icon icon="mdi:snowflake-alert"></ha-icon>
               <span data-key="froides">--</span>
             </div>
-            <div class="chip" data-key="chaudesChip">
-              <ha-icon icon="mdi:thermometer-alert"></ha-icon>
-              <span data-key="chaudes">--</span>
-            </div>
           </div>
 
         </div>
@@ -990,8 +986,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       chauffeChip: q("chauffeChip"),
       froides: q("froides"),
       froidesChip: q("froidesChip"),
-      chaudes: q("chaudes"),
-      chaudesChip: q("chaudesChip"),
     };
 
     this._els.powerBtn.addEventListener("click", () => this._togglePower());
@@ -1054,8 +1048,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     }
 
     // froides = pièces trop froides (erreur de température)
-    // chaudes = pièces trop chaudes (erreur de température)
-    const stats = { heating: 0, froides: 0, chaudes: 0, total: areas.length };
+    const stats = { heating: 0, froides: 0, total: areas.length };
 
     for (const area of areas) {
 
@@ -1079,8 +1072,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
       if (current <= target - seuil) {
         stats.froides++;
-      } else if (current >= target + seuil) {
-        stats.chaudes++;
       }
     }
 
@@ -1128,7 +1119,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     els.powerBtn.classList.toggle("na", !available);
     els.powerLabel.textContent = !available ? "--" : isOn ? "Allumé" : "Éteint";
 
-    // --- Pièces en chauffe / froides / chaudes ---
+    // --- Pièces en chauffe / trop froides ---
     const pieces = states[ids.pieces];
     let count = parseInt(pieces?.state, 10);
     let total = parseInt(pieces?.attributes?.total, 10);
@@ -1146,12 +1137,9 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     els.chauffeChip.classList.toggle("ok", Number.isFinite(count) && count > 0);
 
     const froides = stats ? stats.froides : null;
-    const chaudes = stats ? stats.chaudes : null;
 
     els.froides.textContent = stats ? `${froides} trop froide${froides > 1 ? "s" : ""}` : "--";
-    els.chaudes.textContent = stats ? `${chaudes} trop chaude${chaudes > 1 ? "s" : ""}` : "--";
     els.froidesChip.classList.toggle("error", froides > 0);
-    els.chaudesChip.classList.toggle("error", chaudes > 0);
 
     // --- Mode de la maison ---
     const mode = states[ids.mode]?.state;
