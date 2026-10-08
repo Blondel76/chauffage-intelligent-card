@@ -9,6 +9,7 @@ class ChauffageIntelligentCard extends HTMLElement {
     this._valueEls = null;
     this._climateEntityId = undefined; // undefined = pas encore cherché, null = pas trouvé
     this._fenetreEntityId = undefined;
+    this._humiditeEntityId = undefined;
   }
 
   // ==========================================================
@@ -205,6 +206,44 @@ class ChauffageIntelligentCard extends HTMLElement {
   }
 
   // ==========================================================
+  // RECHERCHE DU CAPTEUR D'HUMIDITE (valeur numerique) DE LA PIECE
+  // ==========================================================
+
+  _resolveHumiditeEntity(area) {
+
+    if (!area || !this._hass) {
+      return null;
+    }
+
+    const entities = this._hass.entities;
+    const devices = this._hass.devices;
+
+    if (!entities) {
+      return null;
+    }
+
+    for (const [entityId, entry] of Object.entries(entities)) {
+
+      if (!entityId.startsWith("sensor.")) {
+        continue;
+      }
+
+      if (this._hass.states[entityId]?.attributes?.device_class !== "humidity") {
+        continue;
+      }
+
+      const entityArea = entry.area_id
+        || (devices && entry.device_id ? devices[entry.device_id]?.area_id : null);
+
+      if (entityArea === area) {
+        return entityId;
+      }
+    }
+
+    return null;
+  }
+
+  // ==========================================================
   // LECTURE D'UNE ENTITE
   // ==========================================================
 
@@ -272,6 +311,7 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     this._climateEntityId = this._resolveClimateEntity(area);
     this._fenetreEntityId = this._resolveFenetreEntity(area);
+    this._humiditeEntityId = this._resolveHumiditeEntity(area);
 
     let bodyHtml = "";
 
@@ -534,22 +574,60 @@ class ChauffageIntelligentCard extends HTMLElement {
     }
     els.heatingLabel.textContent = heating ? "Chauffe" : "Éteint";
 
-    // --- Humidité (valeur numérique + niveau qualitatif si dispo) ---
+    // --- Humidité : "Niveau - valeur%" ---
     const humiditeState = this._hass.states[this._entities.humidite];
+    const humAttrs = humiditeState?.attributes || {};
+    const humRaw = humiditeState?.state;
+
+    let niveau = null;
+    let valeur = null;
+
+    // 1) L'état du capteur : numérique, ou texte qualitatif (ex. "normal")
+    const numericState = parseFloat(humRaw);
+
+    if (Number.isFinite(numericState)) {
+      valeur = numericState;
+      niveau = humAttrs.niveau || null;
+    } else if (humRaw && humRaw !== "unknown" && humRaw !== "unavailable") {
+      niveau = humRaw;
+    }
+
+    // 2) Valeur dans les attributs du capteur
+    if (valeur === null) {
+      for (const key of ["valeur", "humidite", "humidity", "value", "taux", "taux_humidite", "current_humidity"]) {
+        const v = parseFloat(humAttrs[key]);
+        if (Number.isFinite(v)) {
+          valeur = v;
+          break;
+        }
+      }
+    }
+
+    // 3) Humidité mesurée par le thermostat de la pièce
+    if (valeur === null) {
+      const v = parseFloat(climateState?.attributes?.current_humidity);
+      if (Number.isFinite(v)) {
+        valeur = v;
+      }
+    }
+
+    // 4) Capteur d'humidité rattaché à la pièce
+    if (valeur === null && this._humiditeEntityId) {
+      const v = parseFloat(this._hass.states[this._humiditeEntityId]?.state);
+      if (Number.isFinite(v)) {
+        valeur = v;
+      }
+    }
+
     let humiditeText = "--";
 
-    if (humiditeState) {
-
-      const raw = humiditeState.state;
-      const niveau = humiditeState.attributes?.niveau;
-      const numeric = parseFloat(raw);
-
-      if (Number.isFinite(numeric)) {
-        humiditeText = niveau ? `${Math.round(numeric)}% ${niveau}` : `${Math.round(numeric)}%`;
-      } else if (raw && raw !== "unknown" && raw !== "unavailable") {
-        // Repli si l'entité renvoie encore uniquement le texte qualitatif.
-        humiditeText = raw;
-      }
+    if (niveau && valeur !== null) {
+      const niveauCap = niveau.charAt(0).toUpperCase() + niveau.slice(1);
+      humiditeText = `${niveauCap} - ${Math.round(valeur)}%`;
+    } else if (valeur !== null) {
+      humiditeText = `${Math.round(valeur)}%`;
+    } else if (niveau) {
+      humiditeText = niveau.charAt(0).toUpperCase() + niveau.slice(1);
     }
 
     els.humidite.textContent = humiditeText;
@@ -809,8 +887,8 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     return {
       master,
       pieces: custom.pieces || "sensor.pieces_en_chauffe",
-      mode: this.config?.mode_entity || custom.mode || attrs.mode_entity || null,
-      chaudiere: this.config?.boiler_entity || custom.chaudiere || attrs.boiler_entity || null,
+      mode: custom.mode || attrs.mode_entity || null,
+      chaudiere: custom.chaudiere || attrs.boiler_entity || null,
     };
   }
 
@@ -850,6 +928,58 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           font-weight: 500;
         }
 
+        .gauge-wrap {
+          position: relative;
+          width: 180px;
+          max-width: 100%;
+          margin: 8px auto 4px;
+        }
+
+        .gauge-svg {
+          width: 100%;
+          display: block;
+        }
+
+        .gauge-track,
+        .gauge-progress {
+          fill: none;
+          stroke-width: 12;
+          stroke-linecap: round;
+        }
+
+        .gauge-track {
+          stroke: var(--divider-color);
+        }
+
+        .gauge-progress {
+          stroke: var(--disabled-text-color, #9e9e9e);
+          transition: stroke-dasharray 0.4s ease, stroke 0.4s ease;
+        }
+
+        .gauge-progress.active {
+          stroke: var(--success-color, #4caf50);
+        }
+
+        .gauge-center {
+          position: absolute;
+          left: 0;
+          right: 0;
+          bottom: 0;
+          text-align: center;
+        }
+
+        .gauge-value {
+          font-size: 30px;
+          font-weight: 500;
+          line-height: 1;
+        }
+
+        .gauge-sub {
+          margin-top: 4px;
+          font-size: 12px;
+          color: var(--secondary-text-color);
+        }
+
         .chips {
           display: flex;
           gap: 8px;
@@ -876,15 +1006,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
         .chip.hidden {
           display: none;
-        }
-
-        .chip.ok ha-icon {
-          color: var(--success-color, #4caf50);
-        }
-
-        .chip.error ha-icon,
-        .chip.error {
-          color: var(--error-color, #f44336);
         }
 
         .right {
@@ -939,6 +1060,17 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
           <div class="title">Chauffage</div>
 
+          <div class="gauge-wrap">
+            <svg viewBox="0 0 180 100" class="gauge-svg">
+              <path class="gauge-track" d="M 15 90 A 75 75 0 0 1 165 90" pathLength="100" />
+              <path class="gauge-progress" data-key="gaugeProgress" d="M 15 90 A 75 75 0 0 1 165 90" pathLength="100" stroke-dasharray="0 100" />
+            </svg>
+            <div class="gauge-center">
+              <div class="gauge-value" data-key="gaugeValue">--</div>
+              <div class="gauge-sub" data-key="gaugeSub">pièces en chauffe</div>
+            </div>
+          </div>
+
           <div class="chips">
             <div class="chip">
               <ha-icon icon="mdi:home-switch-outline"></ha-icon>
@@ -947,17 +1079,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
             <div class="chip hidden" data-key="chaudiereChip">
               <ha-icon icon="mdi:fire" data-key="chaudiereIcon"></ha-icon>
               <span data-key="chaudiere">--</span>
-            </div>
-          </div>
-
-          <div class="chips">
-            <div class="chip" data-key="chauffeChip">
-              <ha-icon icon="mdi:radiator"></ha-icon>
-              <span data-key="enChauffe">--</span>
-            </div>
-            <div class="chip" data-key="froidesChip">
-              <ha-icon icon="mdi:snowflake-alert"></ha-icon>
-              <span data-key="froides">--</span>
             </div>
           </div>
 
@@ -976,16 +1097,15 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     const q = (key) => this.shadowRoot.querySelector(`[data-key="${key}"]`);
 
     this._els = {
+      gaugeProgress: q("gaugeProgress"),
+      gaugeValue: q("gaugeValue"),
+      gaugeSub: q("gaugeSub"),
       mode: q("mode"),
       chaudiereChip: q("chaudiereChip"),
       chaudiereIcon: q("chaudiereIcon"),
       chaudiere: q("chaudiere"),
       powerBtn: q("powerBtn"),
       powerLabel: q("powerLabel"),
-      enChauffe: q("enChauffe"),
-      chauffeChip: q("chauffeChip"),
-      froides: q("froides"),
-      froidesChip: q("froidesChip"),
     };
 
     this._els.powerBtn.addEventListener("click", () => this._togglePower());
@@ -1034,10 +1154,9 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     }) || candidates[0];
   }
 
-  _roomStats() {
+  _countRooms() {
 
     const prefix = "sensor.securite_";
-    const seuil = Number(this.config?.seuil_ecart ?? 1);
 
     const areas = Object.keys(this._hass.states)
       .filter((id) => id.startsWith(prefix) && id !== "sensor.securite_chauffage")
@@ -1047,35 +1166,18 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       return null;
     }
 
-    // froides = pièces trop froides (erreur de température)
-    const stats = { heating: 0, froides: 0, total: areas.length };
+    let heating = 0;
 
     for (const area of areas) {
 
       const climateId = this._findClimate(area);
-      const attrs = climateId ? this._hass.states[climateId]?.attributes : null;
 
-      if (!attrs) {
-        continue;
-      }
-
-      if (attrs.hvac_action === "heating") {
-        stats.heating++;
-      }
-
-      const current = Number(attrs.current_temperature);
-      const target = Number(attrs.temperature);
-
-      if (!Number.isFinite(current) || !Number.isFinite(target)) {
-        continue;
-      }
-
-      if (current <= target - seuil) {
-        stats.froides++;
+      if (climateId && this._hass.states[climateId]?.attributes?.hvac_action === "heating") {
+        heating++;
       }
     }
 
-    return stats;
+    return { count: heating, total: areas.length };
   }
 
   _togglePower() {
@@ -1119,27 +1221,39 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     els.powerBtn.classList.toggle("na", !available);
     els.powerLabel.textContent = !available ? "--" : isOn ? "Allumé" : "Éteint";
 
-    // --- Pièces en chauffe / trop froides ---
+    // --- Jauge : pièces en chauffe ---
     const pieces = states[ids.pieces];
     let count = parseInt(pieces?.state, 10);
     let total = parseInt(pieces?.attributes?.total, 10);
 
-    const stats = this._roomStats();
+    if (!Number.isFinite(count)) {
 
-    if (!Number.isFinite(count) && stats) {
-      count = stats.heating;
-      total = stats.total;
+      const auto = this._countRooms();
+
+      if (auto) {
+        count = auto.count;
+        total = auto.total;
+      }
     }
 
-    els.enChauffe.textContent = Number.isFinite(count)
-      ? (Number.isFinite(total) ? `${count}/${total} en chauffe` : `${count} en chauffe`)
-      : "--";
-    els.chauffeChip.classList.toggle("ok", Number.isFinite(count) && count > 0);
+    if (Number.isFinite(count)) {
 
-    const froides = stats ? stats.froides : null;
+      const ratio = Number.isFinite(total) && total > 0
+        ? Math.min(count / total, 1)
+        : (count > 0 ? 1 : 0);
 
-    els.froides.textContent = stats ? `${froides} trop froide${froides > 1 ? "s" : ""}` : "--";
-    els.froidesChip.classList.toggle("error", froides > 0);
+      els.gaugeValue.textContent = Number.isFinite(total) ? `${count}/${total}` : `${count}`;
+      els.gaugeSub.textContent = count > 1 ? "pièces en chauffe" : "pièce en chauffe";
+      els.gaugeProgress.setAttribute("stroke-dasharray", `${ratio * 100} 100`);
+      els.gaugeProgress.classList.toggle("active", count > 0);
+
+    } else {
+
+      els.gaugeValue.textContent = "--";
+      els.gaugeSub.textContent = "pièces en chauffe";
+      els.gaugeProgress.setAttribute("stroke-dasharray", "0 100");
+      els.gaugeProgress.classList.remove("active");
+    }
 
     // --- Mode de la maison ---
     const mode = states[ids.mode]?.state;
@@ -1178,7 +1292,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
 
 // =============================================================
-// EDITEUR (choix du mode de la maison et de la chaudière)
+// EDITEUR (rien à configurer : tout est automatique)
 // =============================================================
 
 class ChauffageIntelligentCentralCardEditor extends HTMLElement {
@@ -1186,94 +1300,25 @@ class ChauffageIntelligentCentralCardEditor extends HTMLElement {
   constructor() {
     super();
     this.attachShadow({ mode: "open" });
-    this._built = false;
   }
 
   setConfig(config) {
-    this._config = { ...(config || {}) };
-    this._build();
-    this._sync();
+
+    this._config = config || {};
+
+    this.shadowRoot.innerHTML = `
+      <div style="padding: 8px 0 16px 0; font-size: 12px; color: var(--secondary-text-color, #999999);">
+        Cette carte se configure toute seule à partir des entités
+        centrales de l'intégration Chauffage intelligent.
+      </div>
+    `;
   }
 
   set hass(hass) {
     this._hass = hass;
-    this._build();
-    this._sync();
-  }
-
-  get hass() {
-    return this._hass;
-  }
-
-  _build() {
-
-    if (this._built) {
-      return;
-    }
-
-    this.shadowRoot.innerHTML = `
-      <style>
-        .container { padding: 8px 0 16px 0; }
-        .title { font-size: 14px; font-weight: 500; margin: 12px 0 8px; }
-        .info { margin-top: 10px; font-size: 12px; color: var(--secondary-text-color, #999999); }
-      </style>
-      <div class="container">
-        <div class="title">Mode de la maison</div>
-        <ha-selector id="mode"></ha-selector>
-        <div class="title">Chaudière (laisser vide en chauffage électrique)</div>
-        <ha-selector id="boiler"></ha-selector>
-        <div class="info">
-          Si un champ est vide, la carte utilise l'entité publiée par
-          le switch général de l'intégration.
-        </div>
-      </div>
-    `;
-
-    this._mode = this.shadowRoot.querySelector("#mode");
-    this._boiler = this.shadowRoot.querySelector("#boiler");
-
-    this._mode.selector = { entity: { domain: ["input_select", "select", "sensor"] } };
-    this._boiler.selector = { entity: { domain: ["switch", "input_boolean", "binary_sensor", "climate"] } };
-
-    this._mode.addEventListener("value-changed", (e) => this._changed("mode_entity", e.detail.value));
-    this._boiler.addEventListener("value-changed", (e) => this._changed("boiler_entity", e.detail.value));
-
-    this._built = true;
-  }
-
-  _sync() {
-
-    if (!this._built || !this._hass || !this._config) {
-      return;
-    }
-
-    this._mode.hass = this._hass;
-    this._boiler.hass = this._hass;
-    this._mode.value = this._config.mode_entity || "";
-    this._boiler.value = this._config.boiler_entity || "";
-  }
-
-  _changed(key, value) {
-
-    const config = { ...this._config };
-
-    if (value) {
-      config[key] = value;
-    } else {
-      delete config[key];
-    }
-
-    this._config = config;
-
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config },
-        bubbles: true,
-        composed: true,
-      })
-    );
   }
 }
+
 
 // =============================================================
 // ENREGISTREMENT
