@@ -325,8 +325,9 @@ class ChauffageIntelligentCard extends HTMLElement {
     return "";
   }
 
-  // Aération : Déconseillé = rouge, Peu utile = orange, Conseillé = vert.
-  // L'ordre des tests compte : "déconseillé" contient "conseillé".
+  // Aération : Recommandée = vert, Possible = jaune, Peu utile = orange,
+  // Déconseillée = rouge. L'ordre des tests compte : "déconseillée"
+  // contient "conseillée".
   _aerationClass(text) {
 
     const t = String(text || "")
@@ -340,7 +341,8 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     if (t.includes("deconseille")) return "error";
     if (t.includes("peu utile")) return "warn";
-    if (t.includes("conseille")) return "ok";
+    if (t.includes("possible")) return "caution";
+    if (t.includes("recommande") || t.includes("conseille")) return "ok";
 
     return "";
   }
