@@ -322,6 +322,26 @@ class ChauffageIntelligentCard extends HTMLElement {
     return "";
   }
 
+  // Aération : Déconseillé = rouge, Peu utile = orange, Conseillé = vert.
+  // L'ordre des tests compte : "déconseillé" contient "conseillé".
+  _aerationClass(text) {
+
+    const t = String(text || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    if (!t || ["--", "unknown", "unavailable"].includes(t)) {
+      return "";
+    }
+
+    if (t.includes("deconseille")) return "error";
+    if (t.includes("peu utile")) return "warn";
+    if (t.includes("conseille")) return "ok";
+
+    return "";
+  }
+
   _setChipLevel(chip, level) {
 
     if (!chip) {
@@ -704,7 +724,7 @@ class ChauffageIntelligentCard extends HTMLElement {
     const aerationState = this._getState(this._entities.aeration);
     els.aeration.textContent = aerationState === "unknown" ? "--" : aerationState;
 
-    this._setChipLevel(els.aerationChip, this._levelClass(aerationState));
+    this._setChipLevel(els.aerationChip, this._aerationClass(aerationState));
 
     // --- Fenêtre / porte ---
     const fenetreState = this._getState(this._fenetreEntityId);
