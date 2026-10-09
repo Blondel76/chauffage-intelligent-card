@@ -1354,14 +1354,20 @@ if (!window.customCards.some(card => card.type === "chauffage-intelligent-centra
 //   - humidité   (Niveau - valeur%)
 //   - aération, fenêtre/porte (puces masquées si pas d'entité)
 //
-// Les entités sont retrouvées via la zone choisie. Elles peuvent
-// aussi être forcées dans la config :
+// AUCUNE recherche automatique de capteur : la température et
+// l'humidité ne viennent que des entités choisies explicitement.
+// Si un champ est vide, l'information n'est pas affichée.
 //
 //   type: custom:chauffage-intelligent-sensor-card
-//   area: salon
+//   area: salon                      (optionnel : nom de la pièce)
 //   name: Salon                      (optionnel)
 //   temperature_entity: sensor.xxx   (optionnel)
 //   humidity_entity: sensor.yyy      (optionnel)
+//
+// Seules les entités à nom fixe de l'intégration sont lues si elles
+// existent : sensor.securite_<pièce> (couleur de l'anneau),
+// sensor.humidite_<pièce>, sensor.aeration_<pièce> et
+// switch.fenetre_ouverte_<pièce>.
 //
 // =============================================================
 
@@ -1413,66 +1419,22 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
   }
 
   // ==========================================================
-  // RECHERCHE D'ENTITES DANS LA ZONE
+  // ENTITES (aucune détection automatique)
   // ==========================================================
-
-  _findInArea(area, domain, deviceClasses) {
-
-    if (!area || !this._hass) {
-      return null;
-    }
-
-    const entities = this._hass.entities;
-    const devices = this._hass.devices;
-
-    if (!entities) {
-      return null;
-    }
-
-    for (const [entityId, entry] of Object.entries(entities)) {
-
-      if (!entityId.startsWith(`${domain}.`)) {
-        continue;
-      }
-
-      if (deviceClasses) {
-
-        const deviceClass = this._hass.states[entityId]?.attributes?.device_class;
-
-        if (!deviceClass || !deviceClasses.includes(deviceClass)) {
-          continue;
-        }
-      }
-
-      const entityArea = entry.area_id
-        || (devices && entry.device_id ? devices[entry.device_id]?.area_id : null);
-
-      if (entityArea === area) {
-        return entityId;
-      }
-    }
-
-    return null;
-  }
 
   _resolveIds(area) {
 
     const c = this.config || {};
     const states = this._hass.states;
-    const own = (id) => (states[id] ? id : null);
-
-    // Fenêtre : switch manuel de l'intégration, sinon capteur d'ouverture
-    const fenetre = own(`switch.fenetre_ouverte_${area}`)
-      || this._findInArea(area, "binary_sensor", ["door", "window", "garage_door", "opening"]);
+    const own = (id) => (area && states[id] ? id : null);
 
     return {
-      temperature: c.temperature_entity || this._findInArea(area, "sensor", ["temperature"]),
-      humidite: c.humidity_entity || this._findInArea(area, "sensor", ["humidity"]),
-      climate: this._findInArea(area, "climate", null),
+      temperature: c.temperature_entity || null,
+      humidite: c.humidity_entity || null,
       securite: own(`sensor.securite_${area}`),
       humiditeTexte: own(`sensor.humidite_${area}`),
       aeration: own(`sensor.aeration_${area}`),
-      fenetre,
+      fenetre: own(`switch.fenetre_ouverte_${area}`),
     };
   }
 
@@ -1736,15 +1698,8 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
     const states = this._hass.states;
     const circumference = 2 * Math.PI * 78;
 
-    const climateAttrs = ids.climate ? states[ids.climate]?.attributes : null;
-
-    // --- Température (capteur, sinon thermostat s'il y en a un) ---
-    let temperature = this._num(ids.temperature);
-
-    if (temperature === null && climateAttrs) {
-      const v = parseFloat(climateAttrs.current_temperature);
-      temperature = Number.isFinite(v) ? v : null;
-    }
+    // --- Température : uniquement le capteur choisi ---
+    const temperature = this._num(ids.temperature);
 
     // --- Humidité : "Niveau - valeur%" ---
     const humState = ids.humiditeTexte ? states[ids.humiditeTexte] : null;
@@ -1775,11 +1730,6 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
 
     if (valeur === null) {
       valeur = this._num(ids.humidite);
-    }
-
-    if (valeur === null && climateAttrs) {
-      const v = parseFloat(climateAttrs.current_humidity);
-      valeur = Number.isFinite(v) ? v : null;
     }
 
     let humiditeText = null;
@@ -1906,8 +1856,8 @@ class ChauffageIntelligentSensorCardEditor extends HTMLElement {
         <div class="title">Capteur d'humidité (optionnel)</div>
         <ha-selector id="humidity"></ha-selector>
         <div class="info">
-          Si un champ optionnel est vide, la carte cherche le capteur
-          rattaché à la pièce. Les informations absentes sont masquées.
+          Aucun capteur n'est choisi automatiquement : si un champ est
+          vide, l'information correspondante n'est pas affichée.
         </div>
       </div>
     `;
