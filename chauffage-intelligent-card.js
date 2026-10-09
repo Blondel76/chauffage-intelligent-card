@@ -1342,3 +1342,647 @@ if (!window.customCards.some(card => card.type === "chauffage-intelligent-centra
     preview: true
   });
 }
+
+
+// =============================================================
+// CARTE CAPTEURS (pièces SANS thermostat)
+// =============================================================
+//
+// Même style que la carte pièce, mais sans thermostat, consigne
+// ni badge de chauffe. Affiche seulement ce qui existe :
+//   - température (capteur de la pièce, ou thermostat si présent)
+//   - humidité   (Niveau - valeur%)
+//   - aération, fenêtre/porte (puces masquées si pas d'entité)
+//
+// Les entités sont retrouvées via la zone choisie. Elles peuvent
+// aussi être forcées dans la config :
+//
+//   type: custom:chauffage-intelligent-sensor-card
+//   area: salon
+//   name: Salon                      (optionnel)
+//   temperature_entity: sensor.xxx   (optionnel)
+//   humidity_entity: sensor.yyy      (optionnel)
+//
+// =============================================================
+
+class ChauffageIntelligentSensorCard extends HTMLElement {
+
+  constructor() {
+    super();
+
+    this.attachShadow({ mode: "open" });
+    this._rendered = false;
+    this._lastKey = null;
+    this._els = null;
+    this._ids = null;
+  }
+
+  setConfig(config) {
+
+    this.config = config || {};
+
+    if (this._hass) {
+      this._fullRender();
+    }
+  }
+
+  set hass(hass) {
+
+    this._hass = hass;
+
+    if (!this.config) {
+      return;
+    }
+
+    if (!this._rendered || this._lastKey !== this._configKey()) {
+      this._fullRender();
+    } else {
+      this._updateValues();
+    }
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  _configKey() {
+
+    const c = this.config || {};
+
+    return [c.area, c.name, c.temperature_entity, c.humidity_entity].join("|");
+  }
+
+  // ==========================================================
+  // RECHERCHE D'ENTITES DANS LA ZONE
+  // ==========================================================
+
+  _findInArea(area, domain, deviceClasses) {
+
+    if (!area || !this._hass) {
+      return null;
+    }
+
+    const entities = this._hass.entities;
+    const devices = this._hass.devices;
+
+    if (!entities) {
+      return null;
+    }
+
+    for (const [entityId, entry] of Object.entries(entities)) {
+
+      if (!entityId.startsWith(`${domain}.`)) {
+        continue;
+      }
+
+      if (deviceClasses) {
+
+        const deviceClass = this._hass.states[entityId]?.attributes?.device_class;
+
+        if (!deviceClass || !deviceClasses.includes(deviceClass)) {
+          continue;
+        }
+      }
+
+      const entityArea = entry.area_id
+        || (devices && entry.device_id ? devices[entry.device_id]?.area_id : null);
+
+      if (entityArea === area) {
+        return entityId;
+      }
+    }
+
+    return null;
+  }
+
+  _resolveIds(area) {
+
+    const c = this.config || {};
+    const states = this._hass.states;
+    const own = (id) => (states[id] ? id : null);
+
+    // Fenêtre : switch manuel de l'intégration, sinon capteur d'ouverture
+    const fenetre = own(`switch.fenetre_ouverte_${area}`)
+      || this._findInArea(area, "binary_sensor", ["door", "window", "garage_door", "opening"]);
+
+    return {
+      temperature: c.temperature_entity || this._findInArea(area, "sensor", ["temperature"]),
+      humidite: c.humidity_entity || this._findInArea(area, "sensor", ["humidity"]),
+      climate: this._findInArea(area, "climate", null),
+      securite: own(`sensor.securite_${area}`),
+      humiditeTexte: own(`sensor.humidite_${area}`),
+      aeration: own(`sensor.aeration_${area}`),
+      fenetre,
+    };
+  }
+
+  // ==========================================================
+  // OUTILS
+  // ==========================================================
+
+  _num(entityId) {
+
+    if (!entityId) {
+      return null;
+    }
+
+    const v = parseFloat(this._hass.states[entityId]?.state);
+
+    return Number.isFinite(v) ? v : null;
+  }
+
+  _cap(text) {
+
+    return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
+  }
+
+  _securityColorVar(securityState) {
+
+    const map = {
+      vert: "var(--success-color, #4caf50)",
+      orange: "var(--warning-color, #ff9800)",
+      rouge: "var(--error-color, #f44336)",
+      gris: "var(--disabled-text-color, #9e9e9e)",
+    };
+
+    return map[securityState] || "var(--primary-color, #03a9f4)";
+  }
+
+  _getName(area, ids) {
+
+    const c = this.config || {};
+
+    if (c.name) {
+      return c.name;
+    }
+
+    if (area) {
+      return this._hass?.areas?.[area]?.name || area;
+    }
+
+    const friendly = this._hass?.states?.[ids?.temperature || ids?.humidite]?.attributes?.friendly_name;
+
+    return friendly || "Aucune pièce sélectionnée";
+  }
+
+  // ==========================================================
+  // RENDU COMPLET
+  // ==========================================================
+
+  _fullRender() {
+
+    if (!this._hass || !this.config) {
+      return;
+    }
+
+    const c = this.config;
+    const area = c.area || "";
+    const hasSource = area || c.temperature_entity || c.humidity_entity;
+
+    this._ids = hasSource ? this._resolveIds(area) : null;
+
+    const name = this._getName(area, this._ids);
+
+    const bodyHtml = this._ids
+      ? `
+        <div class="dial-wrap">
+          <svg viewBox="0 0 180 180" class="dial-svg">
+            <circle cx="90" cy="90" r="78" class="dial-track" />
+            <circle cx="90" cy="90" r="78" class="dial-progress" data-key="dialProgress" />
+          </svg>
+          <div class="dial-center">
+            <div class="dial-value" data-key="dialValue">--</div>
+            <div class="dial-sub" data-key="dialSub">--</div>
+          </div>
+        </div>
+
+        <div class="status-row">
+          <div class="status-chip" data-key="humiditeChip">
+            <ha-icon icon="mdi:water-percent"></ha-icon>
+            <span data-key="humidite">--</span>
+          </div>
+          <div class="status-chip" data-key="aerationChip">
+            <ha-icon icon="mdi:window-open-variant"></ha-icon>
+            <span data-key="aeration">--</span>
+          </div>
+          <div class="status-chip" data-key="fenetreChip">
+            <ha-icon icon="mdi:window-closed-variant"></ha-icon>
+            <span data-key="fenetre">--</span>
+          </div>
+        </div>
+      `
+      : `
+        <div class="empty">
+          Sélectionne une pièce (ou un capteur) dans la configuration.
+        </div>
+      `;
+
+    this.shadowRoot.innerHTML = `
+
+      <style>
+
+        :host {
+          display: block;
+        }
+
+        .card {
+          background: var(--ha-card-background, var(--card-background-color));
+          border: 1px solid var(--divider-color);
+          border-radius: var(--ha-card-border-radius, 12px);
+          padding: 16px;
+          box-sizing: border-box;
+          color: var(--primary-text-color);
+        }
+
+        .header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .room {
+          font-size: 16px;
+          font-weight: 500;
+        }
+
+        .dial-wrap {
+          position: relative;
+          width: 180px;
+          height: 180px;
+          margin: 20px auto 16px;
+        }
+
+        .dial-svg {
+          width: 100%;
+          height: 100%;
+        }
+
+        .dial-track {
+          fill: none;
+          stroke: var(--divider-color);
+          stroke-width: 10;
+        }
+
+        .dial-progress {
+          fill: none;
+          stroke-width: 10;
+          stroke-linecap: round;
+          transform: rotate(-90deg);
+          transform-origin: 90px 90px;
+          transition: stroke-dashoffset 0.4s ease, stroke 0.4s ease;
+        }
+
+        .dial-center {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .dial-value {
+          font-size: 34px;
+          font-weight: 500;
+          line-height: 1;
+        }
+
+        .dial-sub {
+          margin-top: 6px;
+          font-size: 12px;
+          color: var(--secondary-text-color);
+        }
+
+        .status-row {
+          display: flex;
+          gap: 8px;
+        }
+
+        .status-chip {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 4px;
+          background: var(--secondary-background-color);
+          border-radius: 8px;
+          padding: 8px 4px;
+          font-size: 11px;
+          color: var(--secondary-text-color);
+          text-align: center;
+        }
+
+        .status-chip.hidden {
+          display: none;
+        }
+
+        .status-chip ha-icon {
+          --mdc-icon-size: 18px;
+          color: var(--secondary-text-color);
+        }
+
+        .empty {
+          margin-top: 16px;
+          color: var(--secondary-text-color);
+        }
+
+      </style>
+
+      <div class="card">
+
+        <div class="header">
+          <div class="room">${name}</div>
+        </div>
+
+        ${bodyHtml}
+
+      </div>
+    `;
+
+    const q = (key) => this.shadowRoot.querySelector(`[data-key="${key}"]`);
+
+    this._els = this._ids
+      ? {
+          dialValue: q("dialValue"),
+          dialSub: q("dialSub"),
+          dialProgress: q("dialProgress"),
+          humidite: q("humidite"),
+          humiditeChip: q("humiditeChip"),
+          aeration: q("aeration"),
+          aerationChip: q("aerationChip"),
+          fenetre: q("fenetre"),
+          fenetreChip: q("fenetreChip"),
+        }
+      : null;
+
+    this._lastKey = this._configKey();
+    this._rendered = true;
+
+    this._updateValues();
+  }
+
+  // ==========================================================
+  // MISE A JOUR DES VALEURS
+  // ==========================================================
+
+  _updateValues() {
+
+    if (!this._ids || !this._els) {
+      return;
+    }
+
+    const ids = this._ids;
+    const els = this._els;
+    const states = this._hass.states;
+    const circumference = 2 * Math.PI * 78;
+
+    const climateAttrs = ids.climate ? states[ids.climate]?.attributes : null;
+
+    // --- Température (capteur, sinon thermostat s'il y en a un) ---
+    let temperature = this._num(ids.temperature);
+
+    if (temperature === null && climateAttrs) {
+      const v = parseFloat(climateAttrs.current_temperature);
+      temperature = Number.isFinite(v) ? v : null;
+    }
+
+    // --- Humidité : "Niveau - valeur%" ---
+    const humState = ids.humiditeTexte ? states[ids.humiditeTexte] : null;
+    const humAttrs = humState?.attributes || {};
+    const humRaw = humState?.state;
+
+    let niveau = null;
+    let valeur = null;
+
+    const numericState = parseFloat(humRaw);
+
+    if (Number.isFinite(numericState)) {
+      valeur = numericState;
+      niveau = humAttrs.niveau || null;
+    } else if (humRaw && humRaw !== "unknown" && humRaw !== "unavailable") {
+      niveau = humRaw;
+    }
+
+    if (valeur === null) {
+      for (const key of ["valeur", "humidite", "humidity", "value", "taux", "taux_humidite", "current_humidity"]) {
+        const v = parseFloat(humAttrs[key]);
+        if (Number.isFinite(v)) {
+          valeur = v;
+          break;
+        }
+      }
+    }
+
+    if (valeur === null) {
+      valeur = this._num(ids.humidite);
+    }
+
+    if (valeur === null && climateAttrs) {
+      const v = parseFloat(climateAttrs.current_humidity);
+      valeur = Number.isFinite(v) ? v : null;
+    }
+
+    let humiditeText = null;
+
+    if (niveau && valeur !== null) {
+      humiditeText = `${this._cap(niveau)} - ${Math.round(valeur)}%`;
+    } else if (valeur !== null) {
+      humiditeText = `${Math.round(valeur)}%`;
+    } else if (niveau) {
+      humiditeText = this._cap(niveau);
+    }
+
+    // --- Cadran : température, sinon humidité, sinon "--" ---
+    let ratio = 0;
+
+    if (temperature !== null) {
+
+      els.dialValue.textContent = `${temperature.toFixed(1)}°`;
+      els.dialSub.textContent = "température";
+
+      // Anneau : échelle 10 °C -> 30 °C
+      ratio = Math.min(Math.max((temperature - 10) / 20, 0), 1);
+
+    } else if (valeur !== null) {
+
+      els.dialValue.textContent = `${Math.round(valeur)}%`;
+      els.dialSub.textContent = "humidité";
+      ratio = Math.min(Math.max(valeur / 100, 0), 1);
+
+    } else {
+
+      els.dialValue.textContent = "--";
+      els.dialSub.textContent = "--";
+    }
+
+    els.dialProgress.style.strokeDasharray = `${circumference}`;
+    els.dialProgress.style.strokeDashoffset = `${circumference * (1 - ratio)}`;
+    els.dialProgress.style.stroke = this._securityColorVar(
+      ids.securite ? states[ids.securite]?.state : null
+    );
+
+    // --- Puces (masquées quand l'information n'existe pas) ---
+    els.humiditeChip.classList.toggle("hidden", humiditeText === null);
+    els.humidite.textContent = humiditeText ?? "--";
+
+    els.aerationChip.classList.toggle("hidden", !ids.aeration);
+
+    if (ids.aeration) {
+      const a = states[ids.aeration]?.state;
+      els.aeration.textContent = a && a !== "unknown" && a !== "unavailable" ? a : "--";
+    }
+
+    els.fenetreChip.classList.toggle("hidden", !ids.fenetre);
+
+    if (ids.fenetre) {
+      const f = states[ids.fenetre]?.state;
+      els.fenetre.textContent = f === "on" ? "Ouverte" : f === "off" ? "Fermée" : "--";
+    }
+  }
+
+  // ==========================================================
+  // EDITEUR / TAILLE
+  // ==========================================================
+
+  static getConfigElement() {
+    return document.createElement("chauffage-intelligent-sensor-card-editor");
+  }
+
+  static getStubConfig() {
+    return { area: "" };
+  }
+
+  getCardSize() {
+    return 4;
+  }
+}
+
+
+// =============================================================
+// EDITEUR (pièce + capteurs optionnels)
+// =============================================================
+
+class ChauffageIntelligentSensorCardEditor extends HTMLElement {
+
+  constructor() {
+    super();
+    this.attachShadow({ mode: "open" });
+    this._built = false;
+  }
+
+  setConfig(config) {
+    this._config = { ...(config || {}) };
+    this._build();
+    this._sync();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    this._build();
+    this._sync();
+  }
+
+  get hass() {
+    return this._hass;
+  }
+
+  _build() {
+
+    if (this._built) {
+      return;
+    }
+
+    this.shadowRoot.innerHTML = `
+      <style>
+        .container { padding: 8px 0 16px 0; }
+        .title { font-size: 14px; font-weight: 500; margin: 12px 0 8px; }
+        .info { margin-top: 10px; font-size: 12px; color: var(--secondary-text-color, #999999); }
+      </style>
+      <div class="container">
+        <div class="title">Pièce</div>
+        <ha-selector id="area"></ha-selector>
+        <div class="title">Capteur de température (optionnel)</div>
+        <ha-selector id="temperature"></ha-selector>
+        <div class="title">Capteur d'humidité (optionnel)</div>
+        <ha-selector id="humidity"></ha-selector>
+        <div class="info">
+          Si un champ optionnel est vide, la carte cherche le capteur
+          rattaché à la pièce. Les informations absentes sont masquées.
+        </div>
+      </div>
+    `;
+
+    this._area = this.shadowRoot.querySelector("#area");
+    this._temperature = this.shadowRoot.querySelector("#temperature");
+    this._humidity = this.shadowRoot.querySelector("#humidity");
+
+    this._area.selector = { area: {} };
+    this._temperature.selector = { entity: { domain: "sensor", device_class: "temperature" } };
+    this._humidity.selector = { entity: { domain: "sensor", device_class: "humidity" } };
+
+    this._area.addEventListener("value-changed", (e) => this._changed("area", e.detail.value));
+    this._temperature.addEventListener("value-changed", (e) => this._changed("temperature_entity", e.detail.value));
+    this._humidity.addEventListener("value-changed", (e) => this._changed("humidity_entity", e.detail.value));
+
+    this._built = true;
+  }
+
+  _sync() {
+
+    if (!this._built || !this._hass || !this._config) {
+      return;
+    }
+
+    this._area.hass = this._hass;
+    this._temperature.hass = this._hass;
+    this._humidity.hass = this._hass;
+
+    this._area.value = this._config.area || "";
+    this._temperature.value = this._config.temperature_entity || "";
+    this._humidity.value = this._config.humidity_entity || "";
+  }
+
+  _changed(key, value) {
+
+    const config = { ...this._config };
+
+    if (value) {
+      config[key] = value;
+    } else {
+      delete config[key];
+    }
+
+    this._config = config;
+
+    this.dispatchEvent(
+      new CustomEvent("config-changed", {
+        detail: { config },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+}
+
+// =============================================================
+// ENREGISTREMENT
+// =============================================================
+
+if (!customElements.get("chauffage-intelligent-sensor-card-editor")) {
+  customElements.define("chauffage-intelligent-sensor-card-editor", ChauffageIntelligentSensorCardEditor);
+}
+
+if (!customElements.get("chauffage-intelligent-sensor-card")) {
+  customElements.define("chauffage-intelligent-sensor-card", ChauffageIntelligentSensorCard);
+}
+
+window.customCards = window.customCards || [];
+
+if (!window.customCards.some(card => card.type === "chauffage-intelligent-sensor-card")) {
+  window.customCards.push({
+    type: "chauffage-intelligent-sensor-card",
+    name: "Chauffage intelligent - Pièce sans thermostat",
+    description: "Température, humidité, aération et fenêtre d'une pièce sans thermostat",
+    preview: true
+  });
+}
