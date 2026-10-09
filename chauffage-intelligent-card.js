@@ -1359,8 +1359,10 @@ if (!window.customCards.some(card => card.type === "chauffage-intelligent-centra
 // Si un champ est vide, l'information n'est pas affichée.
 //
 //   type: custom:chauffage-intelligent-sensor-card
-//   area: salon                      (optionnel : nom de la pièce)
-//   name: Salon                      (optionnel)
+//   name: Congélateur                (titre de la carte)
+//   area: salon                      (OPTIONNEL : à laisser vide pour un
+//                                     appareil, sinon lit les entités
+//                                     de la pièce)
 //   temperature_entity: sensor.xxx   (optionnel)
 //   humidity_entity: sensor.yyy      (optionnel)
 //
@@ -1499,7 +1501,7 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
 
     const c = this.config;
     const area = c.area || "";
-    const hasSource = area || c.temperature_entity || c.humidity_entity;
+    const hasSource = area || c.name || c.temperature_entity || c.humidity_entity;
 
     this._ids = hasSource ? this._resolveIds(area) : null;
 
@@ -1535,7 +1537,7 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
       `
       : `
         <div class="empty">
-          Sélectionne une pièce (ou un capteur) dans la configuration.
+          Donne un nom et choisis un capteur dans la configuration.
         </div>
       `;
 
@@ -1799,7 +1801,7 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
   }
 
   static getStubConfig() {
-    return { area: "" };
+    return {};
   }
 
   getCardSize() {
@@ -1849,27 +1851,33 @@ class ChauffageIntelligentSensorCardEditor extends HTMLElement {
         .info { margin-top: 10px; font-size: 12px; color: var(--secondary-text-color, #999999); }
       </style>
       <div class="container">
-        <div class="title">Pièce</div>
-        <ha-selector id="area"></ha-selector>
+        <div class="title">Nom (ex. Congélateur)</div>
+        <ha-selector id="name"></ha-selector>
         <div class="title">Capteur de température (optionnel)</div>
         <ha-selector id="temperature"></ha-selector>
         <div class="title">Capteur d'humidité (optionnel)</div>
         <ha-selector id="humidity"></ha-selector>
+        <div class="title">Pièce (optionnel, laisser vide pour un appareil)</div>
+        <ha-selector id="area"></ha-selector>
         <div class="info">
           Aucun capteur n'est choisi automatiquement : si un champ est
-          vide, l'information correspondante n'est pas affichée.
+          vide, l'information correspondante n'est pas affichée. Sans
+          pièce, la carte n'utilise aucune entité du chauffage de la maison.
         </div>
       </div>
     `;
 
+    this._name = this.shadowRoot.querySelector("#name");
     this._area = this.shadowRoot.querySelector("#area");
     this._temperature = this.shadowRoot.querySelector("#temperature");
     this._humidity = this.shadowRoot.querySelector("#humidity");
 
+    this._name.selector = { text: {} };
     this._area.selector = { area: {} };
     this._temperature.selector = { entity: { domain: "sensor", device_class: "temperature" } };
     this._humidity.selector = { entity: { domain: "sensor", device_class: "humidity" } };
 
+    this._name.addEventListener("value-changed", (e) => this._changed("name", e.detail.value));
     this._area.addEventListener("value-changed", (e) => this._changed("area", e.detail.value));
     this._temperature.addEventListener("value-changed", (e) => this._changed("temperature_entity", e.detail.value));
     this._humidity.addEventListener("value-changed", (e) => this._changed("humidity_entity", e.detail.value));
@@ -1883,10 +1891,12 @@ class ChauffageIntelligentSensorCardEditor extends HTMLElement {
       return;
     }
 
+    this._name.hass = this._hass;
     this._area.hass = this._hass;
     this._temperature.hass = this._hass;
     this._humidity.hass = this._hass;
 
+    this._name.value = this._config.name || "";
     this._area.value = this._config.area || "";
     this._temperature.value = this._config.temperature_entity || "";
     this._humidity.value = this._config.humidity_entity || "";
