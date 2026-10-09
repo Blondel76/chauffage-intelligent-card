@@ -294,6 +294,48 @@ class ChauffageIntelligentCard extends HTMLElement {
   }
 
   // ==========================================================
+  // COULEUR DES PUCES (humidité, aération, fenêtre)
+  // ==========================================================
+  //
+  // Convertit un texte d'état ("Normal", "Élevé", "Très élevé"...)
+  // en classe CSS : "ok" (vert), "warn" (orange), "error" (rouge)
+  // ou "" (neutre, si l'état n'est pas reconnu).
+  //
+  // ==========================================================
+
+  _levelClass(text) {
+
+    const t = String(text || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    if (!t || ["--", "unknown", "unavailable"].includes(t)) {
+      return "";
+    }
+
+    if (/(tres|trop|critique|urgent|danger|fort)/.test(t)) return "error";
+    if (/(pas |inutile|aucun|non)/.test(t)) return "ok";
+    if (/(eleve|haut|moyen|humide|necessaire|conseille|recommande|aerer)/.test(t)) return "warn";
+    if (/(normal|ok|bon|bien|correct|confort|sec)/.test(t)) return "ok";
+
+    return "";
+  }
+
+  _setChipLevel(chip, level) {
+
+    if (!chip) {
+      return;
+    }
+
+    chip.classList.remove("ok", "warn", "error");
+
+    if (level) {
+      chip.classList.add(level);
+    }
+  }
+
+  // ==========================================================
   // RENDU COMPLET (structure + styles)
   // ==========================================================
   // Appelé uniquement à la création ou quand la pièce change.
@@ -330,15 +372,15 @@ class ChauffageIntelligentCard extends HTMLElement {
         </div>
 
         <div class="status-row">
-          <div class="status-chip">
+          <div class="status-chip" data-key="humiditeChip">
             <ha-icon icon="mdi:water-percent"></ha-icon>
             <span data-key="humidite">--</span>
           </div>
-          <div class="status-chip">
+          <div class="status-chip" data-key="aerationChip">
             <ha-icon icon="mdi:window-open-variant"></ha-icon>
             <span data-key="aeration">--</span>
           </div>
-          <div class="status-chip">
+          <div class="status-chip" data-key="fenetreChip">
             <ha-icon icon="mdi:window-closed-variant"></ha-icon>
             <span data-key="fenetreOuverte">--</span>
           </div>
@@ -467,12 +509,32 @@ class ChauffageIntelligentCard extends HTMLElement {
           font-size: 11px;
           color: var(--secondary-text-color);
           text-align: center;
+          transition: background 0.3s ease, color 0.3s ease;
         }
 
         .status-chip ha-icon {
           --mdc-icon-size: 18px;
           color: var(--secondary-text-color);
         }
+
+        .status-chip.ok {
+          background: color-mix(in srgb, var(--success-color, #4caf50) 20%, var(--secondary-background-color));
+          color: var(--success-color, #4caf50);
+        }
+
+        .status-chip.warn {
+          background: color-mix(in srgb, var(--warning-color, #ff9800) 20%, var(--secondary-background-color));
+          color: var(--warning-color, #ff9800);
+        }
+
+        .status-chip.error {
+          background: color-mix(in srgb, var(--error-color, #f44336) 20%, var(--secondary-background-color));
+          color: var(--error-color, #f44336);
+        }
+
+        .status-chip.ok ha-icon { color: var(--success-color, #4caf50); }
+        .status-chip.warn ha-icon { color: var(--warning-color, #ff9800); }
+        .status-chip.error ha-icon { color: var(--error-color, #f44336); }
 
         .empty {
           margin-top: 16px;
@@ -499,8 +561,11 @@ class ChauffageIntelligentCard extends HTMLElement {
     this._valueEls = entities
       ? {
           humidite: this.shadowRoot.querySelector('[data-key="humidite"]'),
+          humiditeChip: this.shadowRoot.querySelector('[data-key="humiditeChip"]'),
           aeration: this.shadowRoot.querySelector('[data-key="aeration"]'),
+          aerationChip: this.shadowRoot.querySelector('[data-key="aerationChip"]'),
           fenetreOuverte: this.shadowRoot.querySelector('[data-key="fenetreOuverte"]'),
+          fenetreChip: this.shadowRoot.querySelector('[data-key="fenetreChip"]'),
           dialValue: this.shadowRoot.querySelector('[data-key="dialValue"]'),
           dialSub: this.shadowRoot.querySelector('[data-key="dialSub"]'),
           dialProgress: this.shadowRoot.querySelector('[data-key="dialProgress"]'),
@@ -632,9 +697,14 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     els.humidite.textContent = humiditeText;
 
+    // Couleur selon le niveau (normal = vert, élevé = orange, très élevé = rouge)
+    this._setChipLevel(els.humiditeChip, this._levelClass(niveau));
+
     // --- Aération ---
     const aerationState = this._getState(this._entities.aeration);
     els.aeration.textContent = aerationState === "unknown" ? "--" : aerationState;
+
+    this._setChipLevel(els.aerationChip, this._levelClass(aerationState));
 
     // --- Fenêtre / porte ---
     const fenetreState = this._getState(this._fenetreEntityId);
@@ -643,6 +713,12 @@ class ChauffageIntelligentCard extends HTMLElement {
       : fenetreState === "off"
         ? "Fermée"
         : "--";
+
+    // Ouverte = rouge, fermée = vert
+    this._setChipLevel(
+      els.fenetreChip,
+      fenetreState === "on" ? "error" : fenetreState === "off" ? "ok" : ""
+    );
   }
 
   // ==========================================================
