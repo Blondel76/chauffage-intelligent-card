@@ -303,7 +303,10 @@ class ChauffageIntelligentCard extends HTMLElement {
   //
   // ==========================================================
 
-  _levelClass(text) {
+  // Humidité : Normal = vert, Élevé = jaune, Très élevé = orange,
+  // Excessive = rouge. L'ordre des tests compte : "très élevé"
+  // contient "élevé".
+  _humidityClass(text) {
 
     const t = String(text || "")
       .toLowerCase()
@@ -314,10 +317,10 @@ class ChauffageIntelligentCard extends HTMLElement {
       return "";
     }
 
-    if (/(tres|trop|critique|urgent|danger|fort)/.test(t)) return "error";
-    if (/(pas |inutile|aucun|non)/.test(t)) return "ok";
-    if (/(eleve|haut|moyen|humide|necessaire|conseille|recommande|aerer)/.test(t)) return "warn";
-    if (/(normal|ok|bon|bien|correct|confort|sec)/.test(t)) return "ok";
+    if (t.includes("excessi")) return "error";
+    if (t.includes("tres")) return "warn";
+    if (t.includes("eleve")) return "caution";
+    if (t.includes("normal")) return "ok";
 
     return "";
   }
@@ -348,7 +351,7 @@ class ChauffageIntelligentCard extends HTMLElement {
       return;
     }
 
-    chip.classList.remove("ok", "warn", "error");
+    chip.classList.remove("ok", "caution", "warn", "error");
 
     if (level) {
       chip.classList.add(level);
@@ -542,6 +545,11 @@ class ChauffageIntelligentCard extends HTMLElement {
           color: var(--success-color, #4caf50);
         }
 
+        .status-chip.caution {
+          background: color-mix(in srgb, var(--yellow-color, #fdd835) 20%, var(--secondary-background-color));
+          color: var(--yellow-color, #fdd835);
+        }
+
         .status-chip.warn {
           background: color-mix(in srgb, var(--warning-color, #ff9800) 20%, var(--secondary-background-color));
           color: var(--warning-color, #ff9800);
@@ -553,6 +561,7 @@ class ChauffageIntelligentCard extends HTMLElement {
         }
 
         .status-chip.ok ha-icon { color: var(--success-color, #4caf50); }
+        .status-chip.caution ha-icon { color: var(--yellow-color, #fdd835); }
         .status-chip.warn ha-icon { color: var(--warning-color, #ff9800); }
         .status-chip.error ha-icon { color: var(--error-color, #f44336); }
 
@@ -717,8 +726,8 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     els.humidite.textContent = humiditeText;
 
-    // Couleur selon le niveau (normal = vert, élevé = orange, très élevé = rouge)
-    this._setChipLevel(els.humiditeChip, this._levelClass(niveau));
+    // Couleur selon le niveau (normal = vert, élevé = jaune, très élevé = orange, excessive = rouge)
+    this._setChipLevel(els.humiditeChip, this._humidityClass(niveau));
 
     // --- Aération ---
     const aerationState = this._getState(this._entities.aeration);
