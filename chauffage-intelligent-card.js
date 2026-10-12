@@ -994,6 +994,8 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     return {
       master,
       pieces: custom.pieces || "sensor.pieces_en_chauffe",
+      froides: custom.froides || "sensor.pieces_froides",
+      chaudes: custom.chaudes || "sensor.pieces_chaudes",
       mode: this.config?.mode_entity || custom.mode || attrs.mode_entity || null,
       chaudiere: this.config?.boiler_entity || custom.chaudiere || attrs.boiler_entity || null,
     };
@@ -1144,6 +1146,10 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
               <ha-icon icon="mdi:snowflake-alert"></ha-icon>
               <span data-key="froides">--</span>
             </div>
+            <div class="chip" data-key="chaudesChip">
+              <ha-icon icon="mdi:thermometer-alert"></ha-icon>
+              <span data-key="chaudes">--</span>
+            </div>
           </div>
 
         </div>
@@ -1171,6 +1177,8 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       chauffeChip: q("chauffeChip"),
       froides: q("froides"),
       froidesChip: q("froidesChip"),
+      chaudes: q("chaudes"),
+      chaudesChip: q("chaudesChip"),
     };
 
     this._els.powerBtn.addEventListener("click", () => this._togglePower());
@@ -1181,87 +1189,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
   // ==========================================================
   // BOUTON MARCHE / ARRET
   // ==========================================================
-
-  // Pièces = une par sensor.securite_<area> (créé par l'intégration).
-  // Une pièce chauffe si son thermostat est en hvac_action "heating".
-  _findClimate(area) {
-
-    const entities = this._hass.entities;
-    const devices = this._hass.devices;
-
-    if (!entities) {
-      return null;
-    }
-
-    const candidates = [];
-
-    for (const [entityId, entry] of Object.entries(entities)) {
-
-      if (!entityId.startsWith("climate.")) {
-        continue;
-      }
-
-      const entityArea = entry.area_id
-        || (devices && entry.device_id ? devices[entry.device_id]?.area_id : null);
-
-      if (entityArea === area) {
-        candidates.push(entityId);
-      }
-    }
-
-    if (candidates.length <= 1) {
-      return candidates[0] || null;
-    }
-
-    return candidates.find((id) => {
-      const presets = this._hass.states[id]?.attributes?.preset_modes;
-      return Array.isArray(presets) && presets.length > 0;
-    }) || candidates[0];
-  }
-
-  _roomStats() {
-
-    const prefix = "sensor.securite_";
-    const seuil = Number(this.config?.seuil_ecart ?? 1);
-
-    const areas = Object.keys(this._hass.states)
-      .filter((id) => id.startsWith(prefix) && id !== "sensor.securite_chauffage")
-      .map((id) => id.slice(prefix.length));
-
-    if (areas.length === 0) {
-      return null;
-    }
-
-    // froides = pièces trop froides (erreur de température)
-    const stats = { heating: 0, froides: 0, total: areas.length };
-
-    for (const area of areas) {
-
-      const climateId = this._findClimate(area);
-      const attrs = climateId ? this._hass.states[climateId]?.attributes : null;
-
-      if (!attrs) {
-        continue;
-      }
-
-      if (attrs.hvac_action === "heating") {
-        stats.heating++;
-      }
-
-      const current = Number(attrs.current_temperature);
-      const target = Number(attrs.temperature);
-
-      if (!Number.isFinite(current) || !Number.isFinite(target)) {
-        continue;
-      }
-
-      if (current <= target - seuil) {
-        stats.froides++;
-      }
-    }
-
-    return stats;
-  }
 
   _togglePower() {
 
@@ -1304,27 +1231,34 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     els.powerBtn.classList.toggle("na", !available);
     els.powerLabel.textContent = !available ? "--" : isOn ? "Allumé" : "Éteint";
 
-    // --- Pièces en chauffe / trop froides ---
+    // --- Pièces en chauffe ---
     const pieces = states[ids.pieces];
-    let count = parseInt(pieces?.state, 10);
-    let total = parseInt(pieces?.attributes?.total, 10);
-
-    const stats = this._roomStats();
-
-    if (!Number.isFinite(count) && stats) {
-      count = stats.heating;
-      total = stats.total;
-    }
+    const count = parseInt(pieces?.state, 10);
+    const total = parseInt(pieces?.attributes?.total, 10);
 
     els.enChauffe.textContent = Number.isFinite(count)
       ? (Number.isFinite(total) ? `${count}/${total} en chauffe` : `${count} en chauffe`)
       : "--";
     els.chauffeChip.classList.toggle("ok", Number.isFinite(count) && count > 0);
 
-    const froides = stats ? stats.froides : null;
+    // --- Pièces trop froides / trop chaudes (lues dans l'intégration) ---
+    const readCount = (id) => {
+      const v = parseInt(states[id]?.state, 10);
+      return Number.isFinite(v) ? v : null;
+    };
 
-    els.froides.textContent = stats ? `${froides} trop froide${froides > 1 ? "s" : ""}` : "--";
-    els.froidesChip.classList.toggle("error", froides > 0);
+    const froides = readCount(ids.froides);
+    const chaudes = readCount(ids.chaudes);
+
+    els.froides.textContent = froides === null
+      ? "--"
+      : `${froides} trop froide${froides > 1 ? "s" : ""}`;
+    els.froidesChip.classList.toggle("error", froides !== null && froides > 0);
+
+    els.chaudes.textContent = chaudes === null
+      ? "--"
+      : `${chaudes} trop chaude${chaudes > 1 ? "s" : ""}`;
+    els.chaudesChip.classList.toggle("error", chaudes !== null && chaudes > 0);
 
     // --- Mode de la maison ---
     const mode = states[ids.mode]?.state;
