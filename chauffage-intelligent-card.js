@@ -1097,6 +1097,10 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           display: block;
         }
 
+        .device svg.hidden {
+          display: none;
+        }
+
         .rad-accent { fill: #8a94a3; transition: fill 0.3s ease; }
         .rad-accent-stroke { stroke: #8a94a3; opacity: 0; transition: stroke 0.3s ease, opacity 0.3s ease; }
         .device.on .rad-accent { fill: var(--primary-color, #03a9f4); }
