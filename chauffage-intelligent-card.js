@@ -1084,21 +1084,23 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
         .device {
           flex: none;
-          width: 64px;
-          height: 80px;
+          width: 70px;
           display: flex;
           align-items: center;
           justify-content: center;
-          border-radius: 14px;
-          background: linear-gradient(160deg, #f4f6f9, #c9d0da);
-          color: #5b6573;
-          --mdc-icon-size: 38px;
-          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+          filter: drop-shadow(0 3px 5px rgba(0, 0, 0, 0.35));
         }
 
-        .device.on {
-          color: var(--primary-color, #03a9f4);
+        .device svg {
+          width: 100%;
+          height: auto;
+          display: block;
         }
+
+        .boiler-logo { fill: #8a94a3; transition: fill 0.3s ease; }
+        .boiler-flame { fill: #5f6b7a; transition: fill 0.3s ease; }
+        .device.on .boiler-logo { fill: var(--primary-color, #03a9f4); }
+        .device.on .boiler-flame { fill: var(--primary-color, #03a9f4); }
 
         .panel-info {
           min-width: 0;
@@ -1134,6 +1136,10 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           font-size: 19px;
           font-weight: 600;
           line-height: 1.1;
+        }
+
+        .hidden {
+          display: none;
         }
 
         .device-sub {
@@ -1265,11 +1271,8 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
         }
 
         /* Couleurs par carré (comme les carrés colorés de la référence) */
-        .tile.mode .tile-head ha-icon { color: var(--primary-color, #03a9f4); }
-        .tile.mode .bar-fill { background: var(--primary-color, #03a9f4); }
-
-        .tile.boiler .tile-head ha-icon { color: var(--warning-color, #ff9800); }
-        .tile.boiler .bar-fill { background: var(--warning-color, #ff9800); }
+        .tile.heat .tile-head ha-icon { color: var(--warning-color, #ff9800); }
+        .tile.heat .bar-fill { background: var(--warning-color, #ff9800); }
 
         .tile.cold .tile-head ha-icon { color: var(--info-color, #42a5f5); }
         .tile.cold .bar-fill { background: var(--info-color, #42a5f5); }
@@ -1307,7 +1310,33 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
           <div class="panel-top">
             <div class="device" data-key="device">
-              <ha-icon icon="mdi:water-boiler"></ha-icon>
+              <svg viewBox="0 0 70 112" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <defs>
+                  <linearGradient id="bBody" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0" stop-color="#cfd5de"/>
+                    <stop offset="0.18" stop-color="#f7f8fa"/>
+                    <stop offset="0.75" stop-color="#eceff3"/>
+                    <stop offset="1" stop-color="#b9c0cb"/>
+                  </linearGradient>
+                  <linearGradient id="bScreen" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0" stop-color="#1b222c"/>
+                    <stop offset="1" stop-color="#0b0f15"/>
+                  </linearGradient>
+                </defs>
+                <rect x="26" y="1" width="18" height="7" rx="2.5" fill="#aab2be"/>
+                <rect x="6" y="6" width="58" height="84" rx="11" fill="url(#bBody)"/>
+                <rect x="6.5" y="6.5" width="57" height="83" rx="10.5" fill="none" stroke="#ffffff" stroke-opacity="0.7"/>
+                <path class="boiler-logo" d="M35 24 C39 29 43 32 43 38 A8 8 0 0 1 27 38 C27 34 30 32 31 28 C32 30 33 30 34 29 C34.5 27 35 26 35 24 Z"/>
+                <rect x="16" y="55" width="38" height="15" rx="3.500" fill="url(#bScreen)" stroke="#9aa3b0" stroke-width="1"/>
+                <path class="boiler-flame" d="M35 58.500 C37 61 38.500 62 38.500 64.200 A3.500 3.500 0 0 1 31.500 64.200 C31.500 62.800 32.800 62 33.200 60.600 C34 61.300 34.600 61 35 58.500 Z"/>
+                <rect x="14" y="90" width="42" height="4" rx="2" fill="#aab2be"/>
+                <rect x="18" y="94" width="7" height="15" rx="2" fill="#f0883e"/>
+                <rect x="18" y="94" width="7" height="3" rx="1" fill="#c96a26"/>
+                <rect x="31.500" y="94" width="7" height="15" rx="2" fill="#9aa3b0"/>
+                <rect x="31.500" y="94" width="7" height="3" rx="1" fill="#7d8694"/>
+                <rect x="45" y="94" width="7" height="15" rx="2" fill="#4aa3f0"/>
+                <rect x="45" y="94" width="7" height="3" rx="1" fill="#2f86d3"/>
+              </svg>
             </div>
             <div class="panel-info">
               <div class="badge" data-key="badge">
@@ -1315,7 +1344,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
                 <span data-key="badgeLabel">--</span>
               </div>
               <div class="device-title">Chauffage général</div>
-              <div class="device-sub" data-key="deviceSub">Toutes les pièces</div>
+              <div class="device-sub hidden" data-key="deviceSub"></div>
             </div>
           </div>
 
@@ -1334,23 +1363,14 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
         <div class="tiles">
 
-          <div class="tile mode">
+          <div class="tile heat" data-key="heatTile">
             <div class="tile-head">
-              <ha-icon icon="mdi:home-switch-outline"></ha-icon>
-              <span>Mode de la maison</span>
+              <ha-icon icon="mdi:radiator"></ha-icon>
+              <span>Pièces en chauffe</span>
             </div>
-            <div class="tile-value text" data-key="mode">--</div>
-            <div class="tile-sub">(mode de présence)</div>
-          </div>
-
-          <div class="tile boiler hidden" data-key="chaudiereTile">
-            <div class="tile-head">
-              <ha-icon icon="mdi:fire" data-key="chaudiereIcon"></ha-icon>
-              <span>Chaudière</span>
-            </div>
-            <div class="tile-value text" data-key="chaudiere">--</div>
-            <div class="tile-sub">(production de chaleur)</div>
-            <div class="bar"><div class="bar-track"><div class="bar-fill" data-key="chaudiereBar"></div></div></div>
+            <div class="tile-value" data-key="heat">--</div>
+            <div class="tile-sub">demande de chaleur</div>
+            <div class="bar"><div class="bar-track"><div class="bar-fill" data-key="heatBar"></div></div></div>
           </div>
 
           <div class="tile cold" data-key="froidesTile">
@@ -1359,7 +1379,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
               <span>Pièces trop froides</span>
             </div>
             <div class="tile-value" data-key="froides">--</div>
-            <div class="tile-sub" data-key="froidesSub">(sous la consigne)</div>
+            <div class="tile-sub">sous la consigne</div>
             <div class="bar"><div class="bar-track"><div class="bar-fill" data-key="froidesBar"></div></div></div>
           </div>
 
@@ -1369,7 +1389,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
               <span>Pièces trop chaudes</span>
             </div>
             <div class="tile-value" data-key="chaudes">--</div>
-            <div class="tile-sub" data-key="chaudesSub">(au-dessus de la consigne)</div>
+            <div class="tile-sub">au-dessus de la consigne</div>
             <div class="bar"><div class="bar-track"><div class="bar-fill" data-key="chaudesBar"></div></div></div>
           </div>
 
@@ -1388,11 +1408,9 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       badgeLabel: q("badgeLabel"),
       offBtn: q("offBtn"),
       onBtn: q("onBtn"),
-      mode: q("mode"),
-      chaudiereTile: q("chaudiereTile"),
-      chaudiereIcon: q("chaudiereIcon"),
-      chaudiere: q("chaudiere"),
-      chaudiereBar: q("chaudiereBar"),
+      deviceSub: q("deviceSub"),
+      heat: q("heat"),
+      heatBar: q("heatBar"),
       froides: q("froides"),
       froidesTile: q("froidesTile"),
       froidesBar: q("froidesBar"),
@@ -1467,7 +1485,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       if (!isOn) {
         badgeText = "Éteint";
       } else if (Number.isFinite(count) && count > 0) {
-        badgeText = Number.isFinite(total) ? `En chauffe · ${count}/${total}` : `En chauffe · ${count}`;
+        badgeText = "En chauffe";
         badgeActive = true;
       } else {
         badgeText = "Au repos";
@@ -1477,6 +1495,14 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     els.badge.classList.toggle("active", badgeActive);
     els.badgeIcon.setAttribute("icon", available && !isOn ? "mdi:fire-off" : "mdi:fire");
     els.badgeLabel.textContent = badgeText;
+
+    // --- Pièces en chauffe : "x / total" + barre ---
+    els.heat.innerHTML = !Number.isFinite(count)
+      ? "--"
+      : Number.isFinite(total) ? `${count} <small>/ ${total}</small>` : `${count}`;
+    els.heatBar.style.width = Number.isFinite(count) && Number.isFinite(total) && total > 0
+      ? `${Math.round(Math.min(count / total, 1) * 100)}%`
+      : "0%";
 
     // --- Pièces trop froides / trop chaudes (lues dans l'intégration) ---
     const readCount = (id) => {
@@ -1505,25 +1531,19 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     els.chaudesTile.classList.toggle("error", chaudes !== null && chaudes > 0);
     fill(els.chaudesBar, chaudes);
 
-    // --- Mode de la maison ---
+    // --- Mode de la maison (affiché dans le bandeau) ---
     const mode = states[ids.mode]?.state;
     const modeOk = mode && mode !== "unknown" && mode !== "unavailable";
 
-    els.mode.textContent = modeOk ? mode : "--";
     els.bannerSub.textContent = modeOk ? `Mode ${mode}` : "Maison";
 
-    // --- Chaudière (masquée si l'entité n'existe pas = chauffage électrique) ---
+    // --- Chaudière (affichée sous le titre, masquée en chauffage électrique) ---
     const chaudiere = states[ids.chaudiere];
 
-    els.chaudiereTile.classList.toggle("hidden", !chaudiere);
+    els.deviceSub.classList.toggle("hidden", !chaudiere);
 
     if (chaudiere) {
-
-      const on = chaudiere.state === "on";
-
-      els.chaudiere.textContent = on ? "Allumée" : "Éteinte";
-      els.chaudiereIcon.setAttribute("icon", on ? "mdi:fire" : "mdi:fire-off");
-      els.chaudiereBar.style.width = on ? "100%" : "0%";
+      els.deviceSub.textContent = chaudiere.state === "on" ? "Chaudière allumée" : "Chaudière éteinte";
     }
   }
 
