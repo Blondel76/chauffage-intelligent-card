@@ -1724,6 +1724,7 @@ if (!window.customCards.some(card => card.type === "chauffage-intelligent-centra
 //                                     de la pièce)
 //   temperature_entity: sensor.xxx   (optionnel)
 //   humidity_entity: sensor.yyy      (optionnel)
+//   window_entity: binary_sensor.zzz (optionnel : capteur de fenêtre/porte)
 //
 // Seules les entités à nom fixe de l'intégration sont lues si elles
 // existent : sensor.securite_<pièce> (couleur de l'anneau),
@@ -1776,7 +1777,7 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
 
     const c = this.config || {};
 
-    return [c.area, c.name, c.temperature_entity, c.humidity_entity].join("|");
+    return [c.area, c.name, c.temperature_entity, c.humidity_entity, c.window_entity].join("|");
   }
 
   // ==========================================================
@@ -1795,7 +1796,7 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
       securite: own(`sensor.securite_${area}`),
       humiditeTexte: own(`sensor.humidite_${area}`),
       aeration: own(`sensor.aeration_${area}`),
-      fenetre: own(`switch.fenetre_ouverte_${area}`),
+      fenetre: c.window_entity || own(`switch.fenetre_ouverte_${area}`),
     };
   }
 
@@ -1829,6 +1830,61 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
     };
 
     return map[securityState] || "var(--primary-color, #03a9f4)";
+  }
+
+  // Humidité : Normal = vert, Élevé = jaune, Très élevé = orange,
+  // Excessive = rouge (mêmes règles que la carte pièce).
+  _humidityClass(text) {
+
+    const t = String(text || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    if (!t || ["--", "unknown", "unavailable"].includes(t)) {
+      return "";
+    }
+
+    if (t.includes("excessi")) return "error";
+    if (t.includes("tres")) return "warn";
+    if (t.includes("eleve")) return "caution";
+    if (t.includes("normal")) return "ok";
+
+    return "";
+  }
+
+  // Aération : Recommandée = vert, Possible = jaune, Peu utile = orange,
+  // Déconseillée = rouge (mêmes règles que la carte pièce).
+  _aerationClass(text) {
+
+    const t = String(text || "")
+      .toLowerCase()
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "");
+
+    if (!t || ["--", "unknown", "unavailable"].includes(t)) {
+      return "";
+    }
+
+    if (t.includes("deconseille")) return "error";
+    if (t.includes("peu utile")) return "warn";
+    if (t.includes("possible")) return "caution";
+    if (t.includes("recommande") || t.includes("conseille")) return "ok";
+
+    return "";
+  }
+
+  _setChipLevel(chip, level) {
+
+    if (!chip) {
+      return;
+    }
+
+    chip.classList.remove("ok", "caution", "warn", "error");
+
+    if (level) {
+      chip.classList.add(level);
+    }
   }
 
   _getName(area, ids) {
@@ -1993,6 +2049,7 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
           font-size: 11px;
           color: var(--secondary-text-color);
           text-align: center;
+          transition: background 0.3s ease, color 0.3s ease;
         }
 
         .status-chip.hidden {
@@ -2003,6 +2060,31 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
           --mdc-icon-size: 18px;
           color: var(--secondary-text-color);
         }
+
+        .status-chip.ok {
+          background: color-mix(in srgb, var(--success-color, #4caf50) 20%, var(--secondary-background-color));
+          color: var(--success-color, #4caf50);
+        }
+
+        .status-chip.caution {
+          background: color-mix(in srgb, var(--yellow-color, #fdd835) 20%, var(--secondary-background-color));
+          color: var(--yellow-color, #fdd835);
+        }
+
+        .status-chip.warn {
+          background: color-mix(in srgb, var(--warning-color, #ff9800) 20%, var(--secondary-background-color));
+          color: var(--warning-color, #ff9800);
+        }
+
+        .status-chip.error {
+          background: color-mix(in srgb, var(--error-color, #f44336) 20%, var(--secondary-background-color));
+          color: var(--error-color, #f44336);
+        }
+
+        .status-chip.ok ha-icon { color: var(--success-color, #4caf50); }
+        .status-chip.caution ha-icon { color: var(--yellow-color, #fdd835); }
+        .status-chip.warn ha-icon { color: var(--warning-color, #ff9800); }
+        .status-chip.error ha-icon { color: var(--error-color, #f44336); }
 
         .empty {
           margin-top: 16px;
@@ -2132,12 +2214,14 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
     // --- Puces (masquées quand l'information n'existe pas) ---
     els.humiditeChip.classList.toggle("hidden", humiditeText === null);
     els.humidite.textContent = humiditeText ?? "--";
+    this._setChipLevel(els.humiditeChip, this._humidityClass(niveau));
 
     els.aerationChip.classList.toggle("hidden", !ids.aeration);
 
     if (ids.aeration) {
       const a = states[ids.aeration]?.state;
       els.aeration.textContent = a && a !== "unknown" && a !== "unavailable" ? a : "--";
+      this._setChipLevel(els.aerationChip, this._aerationClass(a));
     }
 
     els.fenetreChip.classList.toggle("hidden", !ids.fenetre);
@@ -2145,6 +2229,12 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
     if (ids.fenetre) {
       const f = states[ids.fenetre]?.state;
       els.fenetre.textContent = f === "on" ? "Ouverte" : f === "off" ? "Fermée" : "--";
+
+      // Ouverte = rouge, fermée = vert
+      this._setChipLevel(
+        els.fenetreChip,
+        f === "on" ? "error" : f === "off" ? "ok" : ""
+      );
     }
   }
 
@@ -2213,12 +2303,16 @@ class ChauffageIntelligentSensorCardEditor extends HTMLElement {
         <ha-selector id="temperature"></ha-selector>
         <div class="title">Capteur d'humidité (optionnel)</div>
         <ha-selector id="humidity"></ha-selector>
+        <div class="title">Fenêtre / porte (optionnel)</div>
+        <ha-selector id="window"></ha-selector>
         <div class="title">Pièce (optionnel, laisser vide pour un appareil)</div>
         <ha-selector id="area"></ha-selector>
         <div class="info">
           Aucun capteur n'est choisi automatiquement : si un champ est
           vide, l'information correspondante n'est pas affichée. Sans
           pièce, la carte n'utilise aucune entité du chauffage de la maison.
+          L'aération est lue automatiquement si l'intégration la calcule
+          pour la pièce.
         </div>
       </div>
     `;
@@ -2227,16 +2321,19 @@ class ChauffageIntelligentSensorCardEditor extends HTMLElement {
     this._area = this.shadowRoot.querySelector("#area");
     this._temperature = this.shadowRoot.querySelector("#temperature");
     this._humidity = this.shadowRoot.querySelector("#humidity");
+    this._window = this.shadowRoot.querySelector("#window");
 
     this._name.selector = { text: {} };
     this._area.selector = { area: {} };
     this._temperature.selector = { entity: { domain: "sensor", device_class: "temperature" } };
     this._humidity.selector = { entity: { domain: "sensor", device_class: "humidity" } };
+    this._window.selector = { entity: { domain: "binary_sensor", device_class: ["door", "window", "garage_door", "opening"] } };
 
     this._name.addEventListener("value-changed", (e) => this._changed("name", e.detail.value));
     this._area.addEventListener("value-changed", (e) => this._changed("area", e.detail.value));
     this._temperature.addEventListener("value-changed", (e) => this._changed("temperature_entity", e.detail.value));
     this._humidity.addEventListener("value-changed", (e) => this._changed("humidity_entity", e.detail.value));
+    this._window.addEventListener("value-changed", (e) => this._changed("window_entity", e.detail.value));
 
     this._built = true;
   }
@@ -2251,11 +2348,13 @@ class ChauffageIntelligentSensorCardEditor extends HTMLElement {
     this._area.hass = this._hass;
     this._temperature.hass = this._hass;
     this._humidity.hass = this._hass;
+    this._window.hass = this._hass;
 
     this._name.value = this._config.name || "";
     this._area.value = this._config.area || "";
     this._temperature.value = this._config.temperature_entity || "";
     this._humidity.value = this._config.humidity_entity || "";
+    this._window.value = this._config.window_entity || "";
   }
 
   _changed(key, value) {
