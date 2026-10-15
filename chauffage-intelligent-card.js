@@ -1097,6 +1097,11 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           display: block;
         }
 
+        .rad-accent { fill: #8a94a3; transition: fill 0.3s ease; }
+        .rad-accent-stroke { stroke: #8a94a3; opacity: 0; transition: stroke 0.3s ease, opacity 0.3s ease; }
+        .device.on .rad-accent { fill: var(--primary-color, #03a9f4); }
+        .device.on .rad-accent-stroke { stroke: var(--primary-color, #03a9f4); opacity: 1; }
+
         .boiler-logo { fill: #8a94a3; transition: fill 0.3s ease; }
         .boiler-flame { fill: #5f6b7a; transition: fill 0.3s ease; }
         .device.on .boiler-logo { fill: var(--primary-color, #03a9f4); }
@@ -1304,7 +1309,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
           <div class="panel-top">
             <div class="device" data-key="device">
-              <svg viewBox="0 0 70 112" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <svg data-key="deviceBoiler" viewBox="0 0 70 112" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
                 <defs>
                   <linearGradient id="bBody" x1="0" y1="0" x2="1" y2="0">
                     <stop offset="0" stop-color="#cfd5de"/>
@@ -1330,6 +1335,25 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
                 <rect x="31.500" y="94" width="7" height="3" rx="1" fill="#7d8694"/>
                 <rect x="45" y="94" width="7" height="15" rx="2" fill="#4aa3f0"/>
                 <rect x="45" y="94" width="7" height="3" rx="1" fill="#2f86d3"/>
+              </svg>
+              <svg class="hidden" data-key="deviceRad" viewBox="0 0 70 112" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                <defs>
+                  <linearGradient id="rFin" x1="0" y1="0" x2="1" y2="0">
+                    <stop offset="0" stop-color="#cfd5de"/>
+                    <stop offset="0.35" stop-color="#f7f8fa"/>
+                    <stop offset="1" stop-color="#b9c0cb"/>
+                  </linearGradient>
+                </defs>
+                <rect x="4" y="22" width="62" height="7" rx="3.500" fill="#aab2be"/>
+                <rect x="9" y="26" width="9" height="62" rx="4.500" fill="url(#rFin)"/>
+                <rect x="20" y="26" width="9" height="62" rx="4.500" fill="url(#rFin)"/>
+                <rect x="31" y="26" width="9" height="62" rx="4.500" fill="url(#rFin)"/>
+                <rect x="42" y="26" width="9" height="62" rx="4.500" fill="url(#rFin)"/>
+                <rect x="53" y="26" width="9" height="62" rx="4.500" fill="url(#rFin)"/>
+                <rect x="4" y="85" width="62" height="7" rx="3.500" fill="#aab2be"/>
+                <rect class="rad-accent" x="52" y="92" width="9" height="12" rx="2.500"/>
+                <rect x="9" y="92" width="6" height="8" rx="2" fill="#9aa3b0"/>
+                <path class="rad-accent-stroke" d="M22 14 C20 11 24 9 22 6 M35 14 C33 11 37 9 35 6 M48 14 C46 11 50 9 48 6" fill="none" stroke-width="2" stroke-linecap="round"/>
               </svg>
             </div>
             <div class="panel-info">
@@ -1393,6 +1417,8 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     this._els = {
       bannerSub: q("bannerSub"),
       device: q("device"),
+      deviceBoiler: q("deviceBoiler"),
+      deviceRad: q("deviceRad"),
       badge: q("badge"),
       badgeIcon: q("badgeIcon"),
       badgeLabel: q("badgeLabel"),
@@ -1519,6 +1545,12 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       : hasTotal ? `${chaudes} <small>/ ${total}</small>` : `${chaudes}`;
     els.chaudesTile.classList.toggle("error", chaudes !== null && chaudes > 0);
     fill(els.chaudesBar, chaudes);
+
+    // --- Vignette : chaudière si une entité chaudière existe, sinon radiateur (électrique) ---
+    const hasBoiler = !!(ids.chaudiere && states[ids.chaudiere]);
+
+    els.deviceBoiler.classList.toggle("hidden", !hasBoiler);
+    els.deviceRad.classList.toggle("hidden", hasBoiler);
 
     // --- Mode de la maison (affiché dans le bandeau) ---
     const mode = states[ids.mode]?.state;
