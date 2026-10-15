@@ -1015,124 +1015,193 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           display: block;
         }
 
+        * {
+          box-sizing: border-box;
+        }
+
         .card {
           background: var(--ha-card-background, var(--card-background-color));
           border: 1px solid var(--divider-color);
-          border-radius: var(--ha-card-border-radius, 12px);
-          padding: 16px;
-          box-sizing: border-box;
+          border-radius: var(--ha-card-border-radius, 16px);
+          padding: 14px;
           color: var(--primary-text-color);
+          display: flex;
+          flex-direction: column;
+          gap: 14px;
         }
 
-        /* ---------- En-tête : titre + badge "En chauffe" ---------- */
+        /* ---------- Bandeau titre ---------- */
 
-        .header {
+        .banner {
           display: flex;
           align-items: center;
-          justify-content: space-between;
-          gap: 12px;
+          gap: 14px;
+          padding: 12px 16px;
+          border: 1px solid var(--divider-color);
+          border-radius: 14px;
+          background: color-mix(in srgb, var(--primary-text-color) 3%, transparent);
         }
 
-        .title-wrap {
-          display: flex;
-          align-items: center;
-          gap: 12px;
+        .banner-icon {
+          --mdc-icon-size: 44px;
+          color: var(--primary-color, #03a9f4);
+          flex: none;
+        }
+
+        .banner-text {
           min-width: 0;
         }
 
-        .title-icon {
-          --mdc-icon-size: 30px;
+        .banner-title {
+          font-size: 24px;
+          font-weight: 600;
+          line-height: 1.15;
+        }
+
+        .banner-sub {
+          margin-top: 2px;
+          font-size: 14px;
+          color: var(--primary-color, #03a9f4);
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+
+        /* ---------- Panneau principal ---------- */
+
+        .panel {
+          padding: 14px;
+          border: 1px solid var(--divider-color);
+          border-radius: 14px;
+          background: color-mix(in srgb, var(--primary-text-color) 3%, transparent);
+        }
+
+        .panel-top {
+          display: flex;
+          align-items: center;
+          gap: 14px;
+        }
+
+        .device {
+          flex: none;
+          width: 64px;
+          height: 80px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          border-radius: 14px;
+          background: linear-gradient(160deg, #f4f6f9, #c9d0da);
+          color: #5b6573;
+          --mdc-icon-size: 38px;
+          box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+        }
+
+        .device.on {
           color: var(--primary-color, #03a9f4);
         }
 
-        .title {
-          font-size: 18px;
-          font-weight: 600;
+        .panel-info {
+          min-width: 0;
+          display: flex;
+          flex-direction: column;
+          align-items: flex-start;
+          gap: 6px;
         }
 
         .badge {
-          display: flex;
+          display: inline-flex;
           align-items: center;
           gap: 6px;
           padding: 5px 12px;
           border-radius: 8px;
-          font-size: 13px;
-          font-weight: 500;
+          font-size: 14px;
+          font-weight: 600;
           white-space: nowrap;
-          border: 1px solid var(--divider-color);
-          background: var(--secondary-background-color);
           color: var(--secondary-text-color);
-          transition: background 0.3s ease, color 0.3s ease, border-color 0.3s ease;
-        }
-
-        .badge ha-icon {
-          --mdc-icon-size: 16px;
+          border: 1px solid var(--divider-color);
+          background: color-mix(in srgb, var(--primary-text-color) 4%, transparent);
+          transition: all 0.3s ease;
+          --mdc-icon-size: 18px;
         }
 
         .badge.active {
           color: var(--success-color, #4caf50);
           border-color: var(--success-color, #4caf50);
-          background: color-mix(in srgb, var(--success-color, #4caf50) 15%, transparent);
+          background: color-mix(in srgb, var(--success-color, #4caf50) 14%, transparent);
         }
 
-        /* ---------- Bouton marche / arrêt ---------- */
+        .device-title {
+          font-size: 19px;
+          font-weight: 600;
+          line-height: 1.1;
+        }
 
-        .power-btn {
-          width: 100%;
-          margin-top: 16px;
-          padding: 14px 8px;
-          box-sizing: border-box;
+        .device-sub {
+          font-size: 14px;
+          color: var(--primary-color, #03a9f4);
+          opacity: 0.85;
+        }
+
+        /* ---------- Boutons Arrêt / On ---------- */
+
+        .buttons {
+          display: flex;
+          gap: 10px;
+          margin-top: 14px;
+        }
+
+        .btn {
+          flex: 1;
           display: flex;
           flex-direction: column;
           align-items: center;
+          justify-content: center;
           gap: 6px;
-          cursor: pointer;
-          font-size: 14px;
+          padding: 14px 8px;
           font-family: inherit;
+          font-size: 14px;
+          font-weight: 500;
           color: var(--primary-text-color);
-          background: var(--secondary-background-color);
+          cursor: pointer;
+          border-radius: 14px;
           border: 1px solid var(--divider-color);
-          border-radius: 12px;
-          transition: background 0.3s ease, border-color 0.3s ease, color 0.3s ease, transform 0.1s ease;
-          --mdc-icon-size: 30px;
+          background: color-mix(in srgb, var(--primary-text-color) 4%, transparent);
+          transition: background 0.25s ease, border-color 0.25s ease, color 0.25s ease, transform 0.1s ease;
+          --mdc-icon-size: 28px;
         }
 
-        .power-btn:active {
-          transform: scale(0.98);
+        .btn:active {
+          transform: scale(0.97);
         }
 
-        .power-btn.on {
-          background: var(--primary-color, #03a9f4);
-          border-color: var(--primary-color, #03a9f4);
+        .btn.active {
           color: #fff;
+          border-color: var(--primary-color, #03a9f4);
+          background: var(--primary-color, #03a9f4);
+          box-shadow: 0 2px 10px color-mix(in srgb, var(--primary-color, #03a9f4) 45%, transparent);
         }
 
-        .power-btn.na {
+        .btn.na {
           cursor: not-allowed;
-          opacity: 0.6;
+          opacity: 0.55;
         }
 
-        /* ---------- Carrés d'infos ---------- */
+        /* ---------- Carrés d'infos (icône, titre, valeur, barre) ---------- */
 
         .tiles {
-          display: flex;
-          flex-wrap: wrap;
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
           gap: 10px;
-          margin-top: 12px;
         }
 
         .tile {
-          flex: 1 1 calc(50% - 10px);
-          min-width: 120px;
-          box-sizing: border-box;
           display: flex;
           flex-direction: column;
-          gap: 8px;
-          padding: 12px;
-          background: var(--secondary-background-color);
+          padding: 14px;
           border: 1px solid var(--divider-color);
-          border-radius: 12px;
-          transition: background 0.3s ease, border-color 0.3s ease;
+          border-radius: 14px;
+          background: color-mix(in srgb, var(--primary-text-color) 3%, transparent);
+          transition: border-color 0.3s ease;
         }
 
         .tile.hidden {
@@ -1142,32 +1211,73 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
         .tile-head {
           display: flex;
           align-items: center;
-          gap: 8px;
-          font-size: 13px;
-          color: var(--secondary-text-color);
+          gap: 10px;
+          font-size: 14px;
+          line-height: 1.2;
         }
 
         .tile-head ha-icon {
-          --mdc-icon-size: 22px;
-          color: var(--secondary-text-color);
-          transition: color 0.3s ease;
+          flex: none;
+          --mdc-icon-size: 26px;
         }
 
         .tile-value {
-          font-size: 20px;
+          margin-top: 10px;
+          font-size: 28px;
           font-weight: 500;
           line-height: 1.1;
           word-break: break-word;
         }
 
-        .tile.ok .tile-head ha-icon {
-          color: var(--success-color, #4caf50);
+        .tile-value.text {
+          font-size: 22px;
         }
 
-        .tile.fire .tile-head ha-icon {
-          color: var(--warning-color, #ff9800);
+        .tile-value small {
+          font-size: 16px;
+          font-weight: 400;
+          color: var(--secondary-text-color);
         }
 
+        .tile-sub {
+          margin-top: 4px;
+          font-size: 12px;
+          color: var(--secondary-text-color);
+        }
+
+        .bar {
+          margin-top: auto;
+          padding-top: 12px;
+        }
+
+        .bar-track {
+          height: 6px;
+          border-radius: 3px;
+          overflow: hidden;
+          background: color-mix(in srgb, var(--primary-text-color) 12%, transparent);
+        }
+
+        .bar-fill {
+          height: 100%;
+          width: 0;
+          border-radius: 3px;
+          transition: width 0.4s ease;
+        }
+
+        /* Couleurs par carré (comme les carrés colorés de la référence) */
+        .tile.mode .tile-head ha-icon { color: var(--primary-color, #03a9f4); }
+        .tile.mode .bar-fill { background: var(--primary-color, #03a9f4); }
+
+        .tile.boiler .tile-head ha-icon { color: var(--warning-color, #ff9800); }
+        .tile.boiler .bar-fill { background: var(--warning-color, #ff9800); }
+
+        .tile.cold .tile-head ha-icon { color: var(--info-color, #42a5f5); }
+        .tile.cold .bar-fill { background: var(--info-color, #42a5f5); }
+
+        .tile.hot .tile-head ha-icon { color: #ff7043; }
+        .tile.hot .bar-fill { background: #ff7043; }
+
+        /* Rouge dès qu'il y a au moins une pièce concernée */
         .tile.error {
           border-color: var(--error-color, #f44336);
         }
@@ -1177,58 +1287,90 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           color: var(--error-color, #f44336);
         }
 
+        .tile.error .bar-fill {
+          background: var(--error-color, #f44336);
+        }
+
       </style>
 
       <div class="card">
 
-        <div class="header">
-          <div class="title-wrap">
-            <ha-icon class="title-icon" icon="mdi:fire"></ha-icon>
-            <div class="title">Chauffage</div>
-          </div>
-          <div class="badge" data-key="badge">
-            <ha-icon icon="mdi:fire" data-key="badgeIcon"></ha-icon>
-            <span data-key="badgeLabel">--</span>
+        <div class="banner">
+          <ha-icon class="banner-icon" icon="mdi:fire"></ha-icon>
+          <div class="banner-text">
+            <div class="banner-title">Chauffage</div>
+            <div class="banner-sub" data-key="bannerSub">Maison</div>
           </div>
         </div>
 
-        <button class="power-btn na" data-key="powerBtn" aria-label="Marche / arrêt du chauffage">
-          <ha-icon icon="mdi:fire"></ha-icon>
-          <span>Mode chauffage</span>
-        </button>
+        <div class="panel">
+
+          <div class="panel-top">
+            <div class="device" data-key="device">
+              <ha-icon icon="mdi:water-boiler"></ha-icon>
+            </div>
+            <div class="panel-info">
+              <div class="badge" data-key="badge">
+                <ha-icon icon="mdi:fire" data-key="badgeIcon"></ha-icon>
+                <span data-key="badgeLabel">--</span>
+              </div>
+              <div class="device-title">Chauffage général</div>
+              <div class="device-sub" data-key="deviceSub">Toutes les pièces</div>
+            </div>
+          </div>
+
+          <div class="buttons">
+            <button class="btn na" data-key="offBtn" aria-label="Arrêter le chauffage">
+              <ha-icon icon="mdi:power"></ha-icon>
+              <span>Arrêt</span>
+            </button>
+            <button class="btn na" data-key="onBtn" aria-label="Allumer le chauffage">
+              <ha-icon icon="mdi:fire"></ha-icon>
+              <span>On</span>
+            </button>
+          </div>
+
+        </div>
 
         <div class="tiles">
 
-          <div class="tile">
+          <div class="tile mode">
             <div class="tile-head">
               <ha-icon icon="mdi:home-switch-outline"></ha-icon>
-              <span>Mode</span>
+              <span>Mode de la maison</span>
             </div>
-            <div class="tile-value" data-key="mode">--</div>
+            <div class="tile-value text" data-key="mode">--</div>
+            <div class="tile-sub">(mode de présence)</div>
           </div>
 
-          <div class="tile hidden" data-key="chaudiereTile">
+          <div class="tile boiler hidden" data-key="chaudiereTile">
             <div class="tile-head">
               <ha-icon icon="mdi:fire" data-key="chaudiereIcon"></ha-icon>
               <span>Chaudière</span>
             </div>
-            <div class="tile-value" data-key="chaudiere">--</div>
+            <div class="tile-value text" data-key="chaudiere">--</div>
+            <div class="tile-sub">(production de chaleur)</div>
+            <div class="bar"><div class="bar-track"><div class="bar-fill" data-key="chaudiereBar"></div></div></div>
           </div>
 
-          <div class="tile" data-key="froidesTile">
+          <div class="tile cold" data-key="froidesTile">
             <div class="tile-head">
               <ha-icon icon="mdi:snowflake-alert"></ha-icon>
-              <span>Pièces froides</span>
+              <span>Pièces trop froides</span>
             </div>
             <div class="tile-value" data-key="froides">--</div>
+            <div class="tile-sub" data-key="froidesSub">(sous la consigne)</div>
+            <div class="bar"><div class="bar-track"><div class="bar-fill" data-key="froidesBar"></div></div></div>
           </div>
 
-          <div class="tile" data-key="chaudesTile">
+          <div class="tile hot" data-key="chaudesTile">
             <div class="tile-head">
               <ha-icon icon="mdi:thermometer-alert"></ha-icon>
-              <span>Pièces chaudes</span>
+              <span>Pièces trop chaudes</span>
             </div>
             <div class="tile-value" data-key="chaudes">--</div>
+            <div class="tile-sub" data-key="chaudesSub">(au-dessus de la consigne)</div>
+            <div class="bar"><div class="bar-track"><div class="bar-fill" data-key="chaudesBar"></div></div></div>
           </div>
 
         </div>
@@ -1239,30 +1381,37 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     const q = (key) => this.shadowRoot.querySelector(`[data-key="${key}"]`);
 
     this._els = {
+      bannerSub: q("bannerSub"),
+      device: q("device"),
       badge: q("badge"),
       badgeIcon: q("badgeIcon"),
       badgeLabel: q("badgeLabel"),
-      powerBtn: q("powerBtn"),
+      offBtn: q("offBtn"),
+      onBtn: q("onBtn"),
       mode: q("mode"),
       chaudiereTile: q("chaudiereTile"),
       chaudiereIcon: q("chaudiereIcon"),
       chaudiere: q("chaudiere"),
+      chaudiereBar: q("chaudiereBar"),
       froides: q("froides"),
       froidesTile: q("froidesTile"),
+      froidesBar: q("froidesBar"),
       chaudes: q("chaudes"),
       chaudesTile: q("chaudesTile"),
+      chaudesBar: q("chaudesBar"),
     };
 
-    this._els.powerBtn.addEventListener("click", () => this._togglePower());
+    this._els.offBtn.addEventListener("click", () => this._setPower(false));
+    this._els.onBtn.addEventListener("click", () => this._setPower(true));
 
     this._built = true;
   }
 
   // ==========================================================
-  // BOUTON MARCHE / ARRET
+  // BOUTONS ARRET / ON
   // ==========================================================
 
-  _togglePower() {
+  _setPower(on) {
 
     const id = this._ids().master;
     const st = this._hass?.states?.[id];
@@ -1273,7 +1422,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
     const domain = id.split(".")[0];
 
-    this._hass.callService(domain, st.state === "on" ? "turn_off" : "turn_on", {
+    this._hass.callService(domain, on ? "turn_on" : "turn_off", {
       entity_id: id,
     });
   }
@@ -1292,14 +1441,17 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     const states = this._hass.states;
     const els = this._els;
 
-    // --- Bouton : bleu quand le chauffage est allumé ---
+    // --- Boutons : celui de l'état actuel passe au bleu ---
     const master = states[ids.master];
     const masterState = master?.state;
     const available = master && masterState !== "unavailable" && masterState !== "unknown";
     const isOn = masterState === "on";
 
-    els.powerBtn.classList.toggle("on", available && isOn);
-    els.powerBtn.classList.toggle("na", !available);
+    els.onBtn.classList.toggle("active", available && isOn);
+    els.offBtn.classList.toggle("active", available && !isOn);
+    els.onBtn.classList.toggle("na", !available);
+    els.offBtn.classList.toggle("na", !available);
+    els.device.classList.toggle("on", available && isOn);
 
     // --- Pièces en chauffe (lues dans l'intégration) ---
     const pieces = states[ids.pieces];
@@ -1323,7 +1475,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     }
 
     els.badge.classList.toggle("active", badgeActive);
-    els.badgeIcon.setAttribute("icon", badgeActive ? "mdi:fire" : isOn || !available ? "mdi:fire" : "mdi:fire-off");
+    els.badgeIcon.setAttribute("icon", available && !isOn ? "mdi:fire-off" : "mdi:fire");
     els.badgeLabel.textContent = badgeText;
 
     // --- Pièces trop froides / trop chaudes (lues dans l'intégration) ---
@@ -1334,16 +1486,31 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
     const froides = readCount(ids.froides);
     const chaudes = readCount(ids.chaudes);
+    const hasTotal = Number.isFinite(total) && total > 0;
 
-    els.froides.textContent = froides === null ? "--" : `${froides}`;
+    const fill = (bar, value) => {
+      const ratio = value === null ? 0 : hasTotal ? Math.min(value / total, 1) : value > 0 ? 1 : 0;
+      bar.style.width = `${Math.round(ratio * 100)}%`;
+    };
+
+    els.froides.innerHTML = froides === null
+      ? "--"
+      : hasTotal ? `${froides} <small>/ ${total}</small>` : `${froides}`;
     els.froidesTile.classList.toggle("error", froides !== null && froides > 0);
+    fill(els.froidesBar, froides);
 
-    els.chaudes.textContent = chaudes === null ? "--" : `${chaudes}`;
+    els.chaudes.innerHTML = chaudes === null
+      ? "--"
+      : hasTotal ? `${chaudes} <small>/ ${total}</small>` : `${chaudes}`;
     els.chaudesTile.classList.toggle("error", chaudes !== null && chaudes > 0);
+    fill(els.chaudesBar, chaudes);
 
     // --- Mode de la maison ---
     const mode = states[ids.mode]?.state;
-    els.mode.textContent = mode && mode !== "unknown" && mode !== "unavailable" ? mode : "--";
+    const modeOk = mode && mode !== "unknown" && mode !== "unavailable";
+
+    els.mode.textContent = modeOk ? mode : "--";
+    els.bannerSub.textContent = modeOk ? `Mode ${mode}` : "Maison";
 
     // --- Chaudière (masquée si l'entité n'existe pas = chauffage électrique) ---
     const chaudiere = states[ids.chaudiere];
@@ -1356,7 +1523,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
       els.chaudiere.textContent = on ? "Allumée" : "Éteinte";
       els.chaudiereIcon.setAttribute("icon", on ? "mdi:fire" : "mdi:fire-off");
-      els.chaudiereTile.classList.toggle("fire", on);
+      els.chaudiereBar.style.width = on ? "100%" : "0%";
     }
   }
 
@@ -1373,7 +1540,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
   }
 
   getCardSize() {
-    return 3;
+    return 6;
   }
 }
 
