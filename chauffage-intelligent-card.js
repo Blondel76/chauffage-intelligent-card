@@ -1142,12 +1142,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           display: none;
         }
 
-        .device-sub {
-          font-size: 14px;
-          color: var(--primary-color, #03a9f4);
-          opacity: 0.85;
-        }
-
         /* ---------- Boutons Arrêt / On ---------- */
 
         .buttons {
@@ -1344,7 +1338,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
                 <span data-key="badgeLabel">--</span>
               </div>
               <div class="device-title">Chauffage général</div>
-              <div class="device-sub hidden" data-key="deviceSub"></div>
             </div>
           </div>
 
@@ -1369,7 +1362,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
               <span>Pièces en chauffe</span>
             </div>
             <div class="tile-value" data-key="heat">--</div>
-            <div class="tile-sub">demande de chaleur</div>
             <div class="bar"><div class="bar-track"><div class="bar-fill" data-key="heatBar"></div></div></div>
           </div>
 
@@ -1379,7 +1371,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
               <span>Pièces trop froides</span>
             </div>
             <div class="tile-value" data-key="froides">--</div>
-            <div class="tile-sub">sous la consigne</div>
             <div class="bar"><div class="bar-track"><div class="bar-fill" data-key="froidesBar"></div></div></div>
           </div>
 
@@ -1389,7 +1380,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
               <span>Pièces trop chaudes</span>
             </div>
             <div class="tile-value" data-key="chaudes">--</div>
-            <div class="tile-sub">au-dessus de la consigne</div>
             <div class="bar"><div class="bar-track"><div class="bar-fill" data-key="chaudesBar"></div></div></div>
           </div>
 
@@ -1408,7 +1398,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       badgeLabel: q("badgeLabel"),
       offBtn: q("offBtn"),
       onBtn: q("onBtn"),
-      deviceSub: q("deviceSub"),
       heat: q("heat"),
       heatBar: q("heatBar"),
       froides: q("froides"),
@@ -1536,15 +1525,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     const modeOk = mode && mode !== "unknown" && mode !== "unavailable";
 
     els.bannerSub.textContent = modeOk ? `Mode ${mode}` : "Maison";
-
-    // --- Chaudière (affichée sous le titre, masquée en chauffage électrique) ---
-    const chaudiere = states[ids.chaudiere];
-
-    els.deviceSub.classList.toggle("hidden", !chaudiere);
-
-    if (chaudiere) {
-      els.deviceSub.textContent = chaudiere.state === "on" ? "Chaudière allumée" : "Chaudière éteinte";
-    }
   }
 
   // ==========================================================
