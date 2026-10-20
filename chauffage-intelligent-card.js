@@ -10,6 +10,7 @@ class ChauffageIntelligentCard extends HTMLElement {
     this._climateEntityId = undefined; // undefined = pas encore cherché, null = pas trouvé
     this._fenetreEntityId = undefined;
     this._humiditeEntityId = undefined;
+    this._boostTimer = null;
   }
 
   // ==========================================================
@@ -65,6 +66,7 @@ class ChauffageIntelligentCard extends HTMLElement {
   // sensor.securite_bureau_salle_de_jeux
   // sensor.aeration_bureau_salle_de_jeux (optionnel selon config de la pièce)
   // sensor.humidite_bureau_salle_de_jeux (optionnel selon config de la pièce)
+  // switch.boost_bureau_salle_de_jeux (optionnel : puce Boost masquée si absent)
   //
   // Le thermostat (climate) et le capteur d'ouverture (fenêtre/porte)
   // sont retrouvés via le registre area de Home Assistant, voir
@@ -83,6 +85,7 @@ class ChauffageIntelligentCard extends HTMLElement {
       securite: `sensor.securite_${area}`,
       aeration: `sensor.aeration_${area}`,
       humidite: `sensor.humidite_${area}`,
+      boost: `switch.boost_${area}`,
 
     };
   }
@@ -263,6 +266,170 @@ class ChauffageIntelligentCard extends HTMLElement {
   }
 
   // ==========================================================
+  // MODE BOOST
+  // ==========================================================
+  //
+  // Entité : switch.boost_<pièce> (absente dans certaines pièces :
+  // la puce est alors masquée). Un appui sur la puce active/désactive
+  // le boost.
+  //
+  // Temps restant, par ordre de priorité :
+  //   1) un attribut de fin (date ISO) : fin, end, end_time...
+  //   2) un attribut de temps restant (en minutes, ou "HH:MM:SS")
+  //   3) à défaut : durée configurée (attribut "duree", en minutes)
+  //      moins le temps écoulé depuis le passage du switch sur "on"
+  //
+  // Un petit minuteur rafraîchit l'affichage toutes les 15 s tant que
+  // le boost est actif.
+  //
+  // ==========================================================
+
+  connectedCallback() {
+
+    if (this._rendered) {
+      this._updateBoost();
+    }
+  }
+
+  disconnectedCallback() {
+
+    this._stopBoostTimer();
+  }
+
+  _stopBoostTimer() {
+
+    if (this._boostTimer) {
+      clearInterval(this._boostTimer);
+      this._boostTimer = null;
+    }
+  }
+
+  _boostRemainingMs(st) {
+
+    const a = st?.attributes || {};
+    const now = Date.now();
+
+    for (const key of ["fin", "end", "end_time", "ends_at", "expires_at", "expiration", "heure_fin", "fin_boost", "boost_end"]) {
+      if (a[key]) {
+        const t = Date.parse(a[key]);
+        if (Number.isFinite(t)) {
+          return t - now;
+        }
+      }
+    }
+
+    for (const key of ["restant", "temps_restant", "remaining", "remaining_time", "minutes_restantes", "duree_restante"]) {
+
+      const v = a[key];
+
+      if (v === undefined || v === null || v === "") {
+        continue;
+      }
+
+      if (typeof v === "string" && v.includes(":")) {
+        const parts = v.split(":").map(Number);
+        if (parts.every(Number.isFinite)) {
+          const [h, m, sec] = parts.length === 3 ? parts : [0, parts[0], parts[1] || 0];
+          return ((h * 60 + m) * 60 + sec) * 1000;
+        }
+      }
+
+      const n = parseFloat(v);
+      if (Number.isFinite(n)) {
+        return n * 60000;
+      }
+    }
+
+    const duree = parseFloat(a.duree);
+    const since = Date.parse(st?.last_changed);
+
+    if (Number.isFinite(duree) && Number.isFinite(since)) {
+      return duree * 60000 - (now - since);
+    }
+
+    return null;
+  }
+
+  _formatRemaining(ms) {
+
+    const totalMin = Math.max(Math.ceil(ms / 60000), 1);
+
+    if (totalMin >= 60) {
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      return `${h} h ${String(m).padStart(2, "0")}`;
+    }
+
+    return `${totalMin} min`;
+  }
+
+  _updateBoost() {
+
+    const els = this._valueEls;
+
+    if (!els || !els.boostChip) {
+      return;
+    }
+
+    const id = this._entities?.boost;
+    const st = id && this._hass ? this._hass.states[id] : null;
+
+    // Pièce sans boost : puce masquée
+    els.boostChip.classList.toggle("hidden", !st);
+
+    if (!st) {
+      this._stopBoostTimer();
+      return;
+    }
+
+    const available = st.state !== "unavailable" && st.state !== "unknown";
+    const isOn = st.state === "on";
+
+    els.boostChip.classList.toggle("clickable", available);
+    els.boostChip.setAttribute("aria-pressed", available && isOn ? "true" : "false");
+    this._setChipLevel(els.boostChip, available && isOn ? "warn" : "");
+
+    if (!available) {
+      els.boost.textContent = "--";
+    } else if (isOn) {
+
+      const remaining = this._boostRemainingMs(st);
+
+      els.boost.textContent = remaining !== null && remaining > 0
+        ? `Actif · ${this._formatRemaining(remaining)}`
+        : "Actif";
+
+    } else {
+      els.boost.textContent = "Inactif";
+    }
+
+    // Minuteur : seulement tant que le boost est actif
+    if (available && isOn) {
+
+      if (!this._boostTimer) {
+        this._boostTimer = setInterval(() => this._updateBoost(), 15000);
+      }
+
+    } else {
+      this._stopBoostTimer();
+    }
+  }
+
+  _toggleBoost() {
+
+    const id = this._entities?.boost;
+    const st = id && this._hass ? this._hass.states[id] : null;
+
+    if (!st || st.state === "unavailable" || st.state === "unknown") {
+      return;
+    }
+
+    this._hass.callService("switch", st.state === "on" ? "turn_off" : "turn_on", {
+      entity_id: id,
+    });
+  }
+
+  // ==========================================================
   // NOM DE LA PIECE (via le registre des areas de HA)
   // ==========================================================
 
@@ -409,6 +576,10 @@ class ChauffageIntelligentCard extends HTMLElement {
             <ha-icon icon="mdi:window-closed-variant"></ha-icon>
             <span data-key="fenetreOuverte">--</span>
           </div>
+          <div class="status-chip hidden" data-key="boostChip" role="button" aria-label="Mode boost">
+            <ha-icon icon="mdi:rocket-launch"></ha-icon>
+            <span data-key="boost">--</span>
+          </div>
         </div>
       `;
 
@@ -463,6 +634,19 @@ class ChauffageIntelligentCard extends HTMLElement {
         .heating-badge.active {
           background: rgba(var(--rgb-success-color, 76, 175, 80), 0.15);
           color: var(--success-color, #4caf50);
+        }
+
+        .status-chip.hidden {
+          display: none;
+        }
+
+        .status-chip.clickable {
+          cursor: pointer;
+          transition: background 0.3s ease, color 0.3s ease, transform 0.1s ease;
+        }
+
+        .status-chip.clickable:active {
+          transform: scale(0.96);
         }
 
         .heating-badge ha-icon {
@@ -597,6 +781,8 @@ class ChauffageIntelligentCard extends HTMLElement {
           aerationChip: this.shadowRoot.querySelector('[data-key="aerationChip"]'),
           fenetreOuverte: this.shadowRoot.querySelector('[data-key="fenetreOuverte"]'),
           fenetreChip: this.shadowRoot.querySelector('[data-key="fenetreChip"]'),
+          boost: this.shadowRoot.querySelector('[data-key="boost"]'),
+          boostChip: this.shadowRoot.querySelector('[data-key="boostChip"]'),
           dialValue: this.shadowRoot.querySelector('[data-key="dialValue"]'),
           dialSub: this.shadowRoot.querySelector('[data-key="dialSub"]'),
           dialProgress: this.shadowRoot.querySelector('[data-key="dialProgress"]'),
@@ -606,6 +792,10 @@ class ChauffageIntelligentCard extends HTMLElement {
       : null;
 
     this._entities = entities;
+
+    if (this._valueEls && this._valueEls.boostChip) {
+      this._valueEls.boostChip.addEventListener("click", () => this._toggleBoost());
+    }
     this._lastArea = area;
     this._rendered = true;
 
@@ -750,6 +940,9 @@ class ChauffageIntelligentCard extends HTMLElement {
       els.fenetreChip,
       fenetreState === "on" ? "error" : fenetreState === "off" ? "ok" : ""
     );
+
+    // --- Boost (puce masquée si la pièce n'a pas de boost) ---
+    this._updateBoost();
   }
 
   // ==========================================================
