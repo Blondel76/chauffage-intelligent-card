@@ -1191,6 +1191,8 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       chaudes: custom.chaudes || "sensor.pieces_chaudes",
       mode: this.config?.mode_entity || custom.mode || attrs.mode_entity || null,
       chaudiere: this.config?.boiler_entity || custom.chaudiere || attrs.boiler_entity || null,
+      // Temps de chauffe du jour de la chaudière (optionnel)
+      tempsChauffe: this.config?.heating_time_entity || custom.tempsChauffe || null,
     };
   }
 
@@ -1334,8 +1336,14 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           background: color-mix(in srgb, var(--success-color, #4caf50) 14%, transparent);
         }
 
-        .device-title {
-          font-size: 19px;
+        .heat-time-label {
+          font-size: 13px;
+          color: var(--secondary-text-color);
+          line-height: 1.2;
+        }
+
+        .heat-time-value {
+          font-size: 22px;
           font-weight: 600;
           line-height: 1.1;
         }
@@ -1558,7 +1566,10 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
                 <ha-icon icon="mdi:fire" data-key="badgeIcon"></ha-icon>
                 <span data-key="badgeLabel">--</span>
               </div>
-              <div class="device-title">Chauffage général</div>
+              <div class="heat-time hidden" data-key="heatTime">
+                <div class="heat-time-label">Temps de chauffe du jour</div>
+                <div class="heat-time-value" data-key="heatTimeValue">--</div>
+              </div>
             </div>
           </div>
 
@@ -1619,6 +1630,8 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       badge: q("badge"),
       badgeIcon: q("badgeIcon"),
       badgeLabel: q("badgeLabel"),
+      heatTime: q("heatTime"),
+      heatTimeValue: q("heatTimeValue"),
       offBtn: q("offBtn"),
       onBtn: q("onBtn"),
       heat: q("heat"),
@@ -1749,11 +1762,68 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     els.deviceBoiler.classList.toggle("hidden", !hasBoiler);
     els.deviceRad.classList.toggle("hidden", hasBoiler);
 
+    // --- Temps de chauffe du jour (bloc masqué si aucune entité fournie) ---
+    els.heatTime.classList.toggle("hidden", !ids.tempsChauffe);
+
+    if (ids.tempsChauffe) {
+      els.heatTimeValue.textContent = this._formatHeatTime(states[ids.tempsChauffe]);
+    }
+
     // --- Mode de la maison (affiché dans le bandeau) ---
     const mode = states[ids.mode]?.state;
     const modeOk = mode && mode !== "unknown" && mode !== "unavailable";
 
     els.bannerSub.textContent = modeOk ? `Mode ${mode}` : "Maison";
+  }
+
+  // ==========================================================
+  // FORMAT DU TEMPS DE CHAUFFE
+  // ==========================================================
+  // Accepte un nombre (unité h / min / s lue dans l'entité, heures
+  // par défaut) ou un texte "HH:MM:SS" / "HH:MM".
+  // ==========================================================
+
+  _formatHeatTime(st) {
+
+    if (!st || st.state === "unavailable" || st.state === "unknown") {
+      return "--";
+    }
+
+    let minutes = null;
+    const raw = String(st.state).trim();
+
+    if (raw.includes(":")) {
+
+      const parts = raw.split(":").map(Number);
+
+      if (parts.length >= 2 && parts.every(Number.isFinite)) {
+        const [h, m, sec = 0] = parts;
+        minutes = h * 60 + m + sec / 60;
+      }
+
+    } else {
+
+      const n = parseFloat(raw);
+
+      if (Number.isFinite(n)) {
+        const unit = String(st.attributes?.unit_of_measurement || "h").toLowerCase();
+
+        if (unit === "s") minutes = n / 60;
+        else if (unit === "min") minutes = n;
+        else if (unit === "d") minutes = n * 1440;
+        else minutes = n * 60;
+      }
+    }
+
+    if (minutes === null) {
+      return raw;
+    }
+
+    const total = Math.round(minutes);
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+
+    return h > 0 ? `${h} h ${String(m).padStart(2, "0")}` : `${m} min`;
   }
 
   // ==========================================================
@@ -1819,21 +1889,27 @@ class ChauffageIntelligentCentralCardEditor extends HTMLElement {
         <ha-selector id="mode"></ha-selector>
         <div class="title">Chaudière (laisser vide en chauffage électrique)</div>
         <ha-selector id="boiler"></ha-selector>
+        <div class="title">Temps de chauffe du jour de la chaudière (optionnel)</div>
+        <ha-selector id="heatTime"></ha-selector>
         <div class="info">
           Si un champ est vide, la carte utilise l'entité publiée par
-          le switch général de l'intégration.
+          le switch général de l'intégration. Sans entité de temps de
+          chauffe, rien n'est affiché à cet endroit.
         </div>
       </div>
     `;
 
     this._mode = this.shadowRoot.querySelector("#mode");
     this._boiler = this.shadowRoot.querySelector("#boiler");
+    this._heatTime = this.shadowRoot.querySelector("#heatTime");
 
     this._mode.selector = { entity: { domain: ["input_select", "select", "sensor"] } };
     this._boiler.selector = { entity: { domain: ["switch", "input_boolean", "binary_sensor", "climate"] } };
 
     this._mode.addEventListener("value-changed", (e) => this._changed("mode_entity", e.detail.value));
     this._boiler.addEventListener("value-changed", (e) => this._changed("boiler_entity", e.detail.value));
+    this._heatTime.selector = { entity: { domain: ["sensor", "input_number", "number"] } };
+    this._heatTime.addEventListener("value-changed", (e) => this._changed("heating_time_entity", e.detail.value));
 
     this._built = true;
   }
@@ -1846,8 +1922,10 @@ class ChauffageIntelligentCentralCardEditor extends HTMLElement {
 
     this._mode.hass = this._hass;
     this._boiler.hass = this._hass;
+    this._heatTime.hass = this._hass;
     this._mode.value = this._config.mode_entity || "";
     this._boiler.value = this._config.boiler_entity || "";
+    this._heatTime.value = this._config.heating_time_entity || "";
   }
 
   _changed(key, value) {
