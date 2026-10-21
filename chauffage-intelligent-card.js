@@ -66,7 +66,7 @@ class ChauffageIntelligentCard extends HTMLElement {
   // sensor.securite_bureau_salle_de_jeux
   // sensor.aeration_bureau_salle_de_jeux (optionnel selon config de la pièce)
   // sensor.humidite_bureau_salle_de_jeux (optionnel selon config de la pièce)
-  // sensor.temps_chauffe_jour_bureau_salle_de_jeux (optionnel : ligne masquée si absent)
+  // sensor.heures_chauffe_bureau_salle_de_jeux (temps de chauffe du jour, ligne masquée si absent)
   // switch.boost_bureau_salle_de_jeux (optionnel : puce Boost masquée si absent)
   //
   // Le thermostat (climate), le capteur d'humidité et le capteur
@@ -88,7 +88,7 @@ class ChauffageIntelligentCard extends HTMLElement {
       securite: `sensor.securite_${area}`,
       aeration: `sensor.aeration_${area}`,
       humidite: `sensor.humidite_${area}`,
-      tempsChauffeJour: `sensor.temps_chauffe_jour_${area}`,
+      tempsChauffeJour: `sensor.heures_chauffe_${area}`,
       boost: `switch.boost_${area}`,
 
     };
@@ -322,8 +322,8 @@ class ChauffageIntelligentCard extends HTMLElement {
   // TEMPS DE CHAUFFE DU JOUR (sous la consigne)
   // ==========================================================
   //
-  // Entité : sensor.temps_chauffe_jour_<pièce> (créée par
-  // l'intégration). Accepte un nombre (unité h / min / s lue dans
+  // Entité : sensor.heures_chauffe_<pièce> (créée par
+  // l'intégration, en heures, remise à zéro à minuit). Accepte un nombre (unité h / min / s lue dans
   // l'entité, heures par défaut) ou un texte "HH:MM:SS" / "HH:MM".
   // Ligne masquée si l'entité n'existe pas.
   //
@@ -1271,10 +1271,12 @@ if (!window.customCards.some(card => card.type === "chauffage-intelligent-card")
 //   sensor.pieces_en_chauffe          -> état "n/total" (ex. "2/6")
 //   sensor.pieces_froides             -> état "n/total"
 //   sensor.pieces_chaudes             -> état "n/total"
-//   sensor.temps_chauffe_jour_chaudiere -> temps de chauffe du jour de
+//   sensor.heures_chauffe_chaudiere   -> temps de chauffe du jour de
 //                                        la chaudière (chauffage GAZ
 //                                        uniquement : bloc masqué si
 //                                        l'entité n'existe pas)
+//   sensor.temperature_ext_mini / _maxi       -> extérieur du jour (optionnel)
+//   sensor.temperature_prevue_mini / _maxi    -> prévisions du jour (optionnel)
 //
 // Le mode de la maison et la chaudière ne sont PAS à nom fixe : ce sont
 // les entités choisies par l'utilisateur dans la config centrale. Le
@@ -1344,7 +1346,12 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       chaudiere: this.config?.boiler_entity || custom.chaudiere || attrs.boiler_entity || null,
       // Temps de chauffe du jour de la chaudière : fourni par l'intégration
       // (chauffage gaz uniquement)
-      tempsChauffe: custom.tempsChauffe || "sensor.temps_chauffe_jour_chaudiere",
+      tempsChauffe: custom.tempsChauffe || "sensor.heures_chauffe_chaudiere",
+      // Températures du jour (optionnelles : créées selon la config centrale)
+      extMini: custom.extMini || "sensor.temperature_ext_mini",
+      extMaxi: custom.extMaxi || "sensor.temperature_ext_maxi",
+      prevMini: custom.prevMini || "sensor.temperature_prevue_mini",
+      prevMaxi: custom.prevMaxi || "sensor.temperature_prevue_maxi",
     };
   }
 
@@ -1650,6 +1657,51 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           background: var(--error-color, #f44336);
         }
 
+        /* ---------- Températures du jour (optionnelles) ---------- */
+
+        .temps {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+          gap: 10px;
+        }
+
+        .temp-tile {
+          display: flex;
+          flex-direction: column;
+          padding: 14px;
+          border: 1px solid var(--divider-color);
+          border-radius: 14px;
+          background: color-mix(in srgb, var(--primary-text-color) 3%, transparent);
+        }
+
+        .temp-tile .tile-head ha-icon { color: var(--primary-color, #03a9f4); }
+
+        .temp-range {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 8px;
+          margin-top: 10px;
+        }
+
+        .temp-cell {
+          display: flex;
+          align-items: center;
+          gap: 4px;
+          font-size: 22px;
+          font-weight: 500;
+          line-height: 1.1;
+        }
+
+        .temp-cell ha-icon { --mdc-icon-size: 22px; }
+        .temp-cell.min ha-icon { color: var(--info-color, #42a5f5); }
+        .temp-cell.max ha-icon { color: #ff7043; }
+
+        .temps.hidden,
+        .temp-tile.hidden {
+          display: none;
+        }
+
       </style>
 
       <div class="card">
@@ -1769,6 +1821,32 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
         </div>
 
+        <div class="temps hidden" data-key="temps">
+
+          <div class="temp-tile hidden" data-key="extTile">
+            <div class="tile-head">
+              <ha-icon icon="mdi:thermometer"></ha-icon>
+              <span>Extérieur aujourd'hui</span>
+            </div>
+            <div class="temp-range">
+              <div class="temp-cell min"><ha-icon icon="mdi:thermometer-low"></ha-icon><span data-key="extMini">--</span></div>
+              <div class="temp-cell max"><ha-icon icon="mdi:thermometer-high"></ha-icon><span data-key="extMaxi">--</span></div>
+            </div>
+          </div>
+
+          <div class="temp-tile hidden" data-key="prevTile">
+            <div class="tile-head">
+              <ha-icon icon="mdi:weather-partly-cloudy"></ha-icon>
+              <span>Prévisions du jour</span>
+            </div>
+            <div class="temp-range">
+              <div class="temp-cell min"><ha-icon icon="mdi:thermometer-low"></ha-icon><span data-key="prevMini">--</span></div>
+              <div class="temp-cell max"><ha-icon icon="mdi:thermometer-high"></ha-icon><span data-key="prevMaxi">--</span></div>
+            </div>
+          </div>
+
+        </div>
+
       </div>
     `;
 
@@ -1794,6 +1872,13 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       chaudes: q("chaudes"),
       chaudesTile: q("chaudesTile"),
       chaudesBar: q("chaudesBar"),
+      temps: q("temps"),
+      extTile: q("extTile"),
+      extMini: q("extMini"),
+      extMaxi: q("extMaxi"),
+      prevTile: q("prevTile"),
+      prevMini: q("prevMini"),
+      prevMaxi: q("prevMaxi"),
     };
 
     this._els.offBtn.addEventListener("click", () => this._setPower(false));
@@ -1916,7 +2001,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     // --- Pièces en chauffe : "x / total" + barre ---
     els.heat.innerHTML = !Number.isFinite(count)
       ? "--"
-      : hasTotal ? `${count} <small>/ ${total}</small>` : `${count}`;
+      : `${count}`;
     els.heatBar.style.width = Number.isFinite(count) && hasTotal
       ? `${Math.round(Math.min(count / total, 1) * 100)}%`
       : "0%";
@@ -1932,18 +2017,18 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
     els.froides.innerHTML = froides === null
       ? "--"
-      : hasTotal ? `${froides} <small>/ ${total}</small>` : `${froides}`;
+      : `${froides}`;
     els.froidesTile.classList.toggle("error", froides !== null && froides > 0);
     fill(els.froidesBar, froides);
 
     els.chaudes.innerHTML = chaudes === null
       ? "--"
-      : hasTotal ? `${chaudes} <small>/ ${total}</small>` : `${chaudes}`;
+      : `${chaudes}`;
     els.chaudesTile.classList.toggle("error", chaudes !== null && chaudes > 0);
     fill(els.chaudesBar, chaudes);
 
     // --- Vignette : chaudière si une entité chaudière existe, sinon radiateur (électrique) ---
-    const hasBoiler = !!(ids.chaudiere && states[ids.chaudiere]);
+    const hasBoiler = !!(ids.chaudiere && states[ids.chaudiere]) || !!states[ids.tempsChauffe];
 
     els.deviceBoiler.classList.toggle("hidden", !hasBoiler);
     els.deviceRad.classList.toggle("hidden", hasBoiler);
@@ -1956,6 +2041,37 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
     if (heatTimeState) {
       els.heatTimeValue.textContent = this._formatHeatTime(heatTimeState);
+    }
+
+    // --- Températures du jour (blocs masqués si les capteurs n'existent pas) ---
+    const fmtTemp = (id) => {
+
+      const st = states[id];
+
+      if (!st || st.state === "unavailable" || st.state === "unknown") {
+        return "--";
+      }
+
+      const v = parseFloat(st.state);
+
+      return Number.isFinite(v) ? `${v.toFixed(1)}°` : "--";
+    };
+
+    const hasExt = !!(states[ids.extMini] || states[ids.extMaxi]);
+    const hasPrev = !!(states[ids.prevMini] || states[ids.prevMaxi]);
+
+    els.extTile.classList.toggle("hidden", !hasExt);
+    els.prevTile.classList.toggle("hidden", !hasPrev);
+    els.temps.classList.toggle("hidden", !hasExt && !hasPrev);
+
+    if (hasExt) {
+      els.extMini.textContent = fmtTemp(ids.extMini);
+      els.extMaxi.textContent = fmtTemp(ids.extMaxi);
+    }
+
+    if (hasPrev) {
+      els.prevMini.textContent = fmtTemp(ids.prevMini);
+      els.prevMaxi.textContent = fmtTemp(ids.prevMaxi);
     }
 
     // --- Mode de la maison (affiché dans le bandeau) ---
