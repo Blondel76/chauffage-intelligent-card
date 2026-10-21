@@ -66,11 +66,14 @@ class ChauffageIntelligentCard extends HTMLElement {
   // sensor.securite_bureau_salle_de_jeux
   // sensor.aeration_bureau_salle_de_jeux (optionnel selon config de la pièce)
   // sensor.humidite_bureau_salle_de_jeux (optionnel selon config de la pièce)
+  // sensor.temps_chauffe_jour_bureau_salle_de_jeux (optionnel : ligne masquée si absent)
   // switch.boost_bureau_salle_de_jeux (optionnel : puce Boost masquée si absent)
   //
-  // Le thermostat (climate) et le capteur d'ouverture (fenêtre/porte)
-  // sont retrouvés via le registre area de Home Assistant, voir
-  // _resolveClimateEntity() et _resolveFenetreEntity() ci-dessous.
+  // Le thermostat (climate), le capteur d'humidité et le capteur
+  // d'ouverture (fenêtre/porte) sont retrouvés d'abord via les
+  // attributs publiés par l'intégration, puis via le registre area de
+  // Home Assistant, voir _resolveClimateEntity(), _resolveHumiditeEntity()
+  // et _resolveFenetreEntity() ci-dessous.
   //
   // ==========================================================
 
@@ -85,25 +88,49 @@ class ChauffageIntelligentCard extends HTMLElement {
       securite: `sensor.securite_${area}`,
       aeration: `sensor.aeration_${area}`,
       humidite: `sensor.humidite_${area}`,
+      tempsChauffeJour: `sensor.temps_chauffe_jour_${area}`,
       boost: `switch.boost_${area}`,
 
     };
   }
 
   // ==========================================================
+  // ENTITES CHOISIES DANS LA CONFIG DE LA PIECE (via l'intégration)
+  // ==========================================================
+  //
+  // Les capteurs de la pièce (ex. sensor.temps_de_chauffe_<pièce>)
+  // publient en attributs le thermostat ("climate") et le capteur de
+  // température intérieure ("temperature_interieure") réellement
+  // configurés dans l'intégration. C'est la source la plus fiable :
+  // elle évite de deviner via le registre des areas.
+  //
+  // ==========================================================
+
+  _roomAttributes(area) {
+
+    if (!area || !this._hass) {
+      return {};
+    }
+
+    return this._hass.states[`sensor.temps_de_chauffe_${area}`]?.attributes || {};
+  }
+
+  // ==========================================================
   // RECHERCHE DE L'ENTITE CLIMATE DE LA PIECE
   // ==========================================================
   //
-  // Une pièce peut avoir DEUX entités climate : le thermostat de la
-  // pièce ET la vanne (en chauffage gaz, la vanne est elle-même une
-  // entité climate). On liste tous les climate de la zone, puis on
-  // privilégie celui qui a des preset_modes (confort/eco/hors_gel...)
-  // : c'est le thermostat piloté par le planning, pas la vanne, qui
-  // n'a normalement pas de presets.
+  // 1) Thermostat configuré dans l'intégration (attribut "climate").
   //
-  // Si le registre n'est pas exposé par cette version de HA, ou
-  // qu'aucune entité climate ne matche, on renvoie null et la carte
-  // affiche "--" au centre du cadran.
+  // 2) À défaut, via le registre area de HA : une pièce peut avoir
+  // DEUX entités climate : le thermostat de la pièce ET la vanne (en
+  // chauffage gaz, la vanne est elle-même une entité climate). On
+  // liste tous les climate de la zone, puis on privilégie celui qui a
+  // des preset_modes (confort/eco/hors_gel...) : c'est le thermostat
+  // piloté par le planning, pas la vanne, qui n'a normalement pas de
+  // presets.
+  //
+  // Si rien n'est trouvé, on renvoie null et la carte affiche "--" au
+  // centre du cadran.
   //
   // ==========================================================
 
@@ -111,6 +138,12 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     if (!area || !this._hass) {
       return null;
+    }
+
+    const configured = this._roomAttributes(area).climate;
+
+    if (configured && this._hass.states[configured]) {
+      return configured;
     }
 
     const entities = this._hass.entities;
@@ -211,11 +244,31 @@ class ChauffageIntelligentCard extends HTMLElement {
   // ==========================================================
   // RECHERCHE DU CAPTEUR D'HUMIDITE (valeur numerique) DE LA PIECE
   // ==========================================================
+  //
+  // 1) Même règle que l'intégration : le capteur d'humidité est celui
+  // du même appareil que le capteur de température intérieure
+  // (sensor.xxx_temperature -> sensor.xxx_humidity).
+  //
+  // 2) À défaut, un capteur d'humidité (device_class humidity) rattaché
+  // à la pièce dans le registre des areas.
+  //
+  // ==========================================================
 
   _resolveHumiditeEntity(area) {
 
     if (!area || !this._hass) {
       return null;
+    }
+
+    const tempInt = this._roomAttributes(area).temperature_interieure;
+
+    if (typeof tempInt === "string" && tempInt.endsWith("_temperature")) {
+
+      const derived = tempInt.slice(0, -"_temperature".length) + "_humidity";
+
+      if (this._hass.states[derived]) {
+        return derived;
+      }
     }
 
     const entities = this._hass.entities;
@@ -263,6 +316,60 @@ class ChauffageIntelligentCard extends HTMLElement {
     }
 
     return entity.state;
+  }
+
+  // ==========================================================
+  // TEMPS DE CHAUFFE DU JOUR (sous la consigne)
+  // ==========================================================
+  //
+  // Entité : sensor.temps_chauffe_jour_<pièce> (créée par
+  // l'intégration). Accepte un nombre (unité h / min / s lue dans
+  // l'entité, heures par défaut) ou un texte "HH:MM:SS" / "HH:MM".
+  // Ligne masquée si l'entité n'existe pas.
+  //
+  // ==========================================================
+
+  _formatHeatTime(st) {
+
+    if (!st || st.state === "unavailable" || st.state === "unknown") {
+      return "--";
+    }
+
+    let minutes = null;
+    const raw = String(st.state).trim();
+
+    if (raw.includes(":")) {
+
+      const parts = raw.split(":").map(Number);
+
+      if (parts.length >= 2 && parts.every(Number.isFinite)) {
+        const [h, m, sec = 0] = parts;
+        minutes = h * 60 + m + sec / 60;
+      }
+
+    } else {
+
+      const n = parseFloat(raw);
+
+      if (Number.isFinite(n)) {
+        const unit = String(st.attributes?.unit_of_measurement || "h").toLowerCase();
+
+        if (unit === "s") minutes = n / 60;
+        else if (unit === "min") minutes = n;
+        else if (unit === "d") minutes = n * 1440;
+        else minutes = n * 60;
+      }
+    }
+
+    if (minutes === null) {
+      return raw;
+    }
+
+    const total = Math.round(minutes);
+    const h = Math.floor(total / 60);
+    const m = total % 60;
+
+    return h > 0 ? `${h} h ${String(m).padStart(2, "0")}` : `${m} min`;
   }
 
   // ==========================================================
@@ -560,6 +667,10 @@ class ChauffageIntelligentCard extends HTMLElement {
           <div class="dial-center">
             <div class="dial-value" data-key="dialValue">--</div>
             <div class="dial-sub" data-key="dialSub">--</div>
+            <div class="dial-heat hidden" data-key="dialHeat">
+              <ha-icon icon="mdi:timer-outline"></ha-icon>
+              <span data-key="dialHeatValue">--</span>
+            </div>
           </div>
         </div>
 
@@ -701,6 +812,23 @@ class ChauffageIntelligentCard extends HTMLElement {
           color: var(--secondary-text-color);
         }
 
+        .dial-heat {
+          display: flex;
+          align-items: center;
+          gap: 3px;
+          margin-top: 4px;
+          font-size: 11px;
+          color: var(--secondary-text-color);
+        }
+
+        .dial-heat.hidden {
+          display: none;
+        }
+
+        .dial-heat ha-icon {
+          --mdc-icon-size: 13px;
+        }
+
         .status-row {
           display: flex;
           gap: 8px;
@@ -785,6 +913,8 @@ class ChauffageIntelligentCard extends HTMLElement {
           boostChip: this.shadowRoot.querySelector('[data-key="boostChip"]'),
           dialValue: this.shadowRoot.querySelector('[data-key="dialValue"]'),
           dialSub: this.shadowRoot.querySelector('[data-key="dialSub"]'),
+          dialHeat: this.shadowRoot.querySelector('[data-key="dialHeat"]'),
+          dialHeatValue: this.shadowRoot.querySelector('[data-key="dialHeatValue"]'),
           dialProgress: this.shadowRoot.querySelector('[data-key="dialProgress"]'),
           heatingBadge: this.shadowRoot.querySelector('[data-key="heatingBadge"]'),
           heatingLabel: this.shadowRoot.querySelector('[data-key="heatingLabel"]'),
@@ -854,11 +984,26 @@ class ChauffageIntelligentCard extends HTMLElement {
     els.dialProgress.style.strokeDasharray = `${circumference}`;
     els.dialProgress.style.stroke = ringColor;
 
-    // --- Badge chauffe ---
+    // --- Temps de chauffe du jour (sous la consigne, masqué si absent) ---
+    const heatState = this._hass.states[this._entities.tempsChauffeJour];
+
+    els.dialHeat.classList.toggle("hidden", !heatState);
+
+    if (heatState) {
+      els.dialHeatValue.textContent = `${this._formatHeatTime(heatState)} aujourd'hui`;
+    }
+
+    // --- Badge chauffe : Chauffe / Au repos / Éteint ---
+    let heatingText = "--";
+
+    if (climateState && climateState.state !== "unavailable" && climateState.state !== "unknown") {
+      heatingText = heating ? "Chauffe" : climateState.state === "off" ? "Éteint" : "Au repos";
+    }
+
     if (els.heatingBadge.classList.contains("active") !== heating) {
       els.heatingBadge.classList.toggle("active", heating);
     }
-    els.heatingLabel.textContent = heating ? "Chauffe" : "Éteint";
+    els.heatingLabel.textContent = heatingText;
 
     // --- Humidité : "Niveau - valeur%" ---
     const humiditeState = this._hass.states[this._entities.humidite];
@@ -897,7 +1042,7 @@ class ChauffageIntelligentCard extends HTMLElement {
       }
     }
 
-    // 4) Capteur d'humidité rattaché à la pièce
+    // 4) Capteur d'humidité de la pièce (même appareil que la température)
     if (valeur === null && this._humiditeEntityId) {
       const v = parseFloat(this._hass.states[this._humiditeEntityId]?.state);
       if (Number.isFinite(v)) {
@@ -1107,7 +1252,7 @@ window.customCards = window.customCards || [];
 if (!window.customCards.some(card => card.type === "chauffage-intelligent-card")) {
   window.customCards.push({
     type: "chauffage-intelligent-card",
-    name: "Chauffage intélligent card",
+    name: "Chauffage intelligent card",
     description: "Affichage du chauffage par pièce",
     preview: true
   });
@@ -1123,15 +1268,21 @@ if (!window.customCards.some(card => card.type === "chauffage-intelligent-card")
 // automatiquement via les noms fixes créés par l'intégration :
 //
 //   switch.chauffage_general          -> marche/arrêt général (bouton)
-//   sensor.pieces_en_chauffe          -> état = nb de pièces en chauffe,
-//                                        attribut "total" = nb de pièces
+//   sensor.pieces_en_chauffe          -> état "n/total" (ex. "2/6")
+//   sensor.pieces_froides             -> état "n/total"
+//   sensor.pieces_chaudes             -> état "n/total"
+//   sensor.temps_chauffe_jour_chaudiere -> temps de chauffe du jour de
+//                                        la chaudière (chauffage GAZ
+//                                        uniquement : bloc masqué si
+//                                        l'entité n'existe pas)
 //
 // Le mode de la maison et la chaudière ne sont PAS à nom fixe : ce sont
 // les entités choisies par l'utilisateur dans la config centrale. Le
-// switch général les publie dans ses attributs :
+// switch général peut les publier dans ses attributs :
 //   mode_entity   -> ex. input_select.mode_presence_maison
 //   boiler_entity -> ex. switch.ma_chaudiere (absent en électrique :
 //                    le bloc chaudière est alors masqué)
+// À défaut, ils se règlent dans l'éditeur de la carte.
 //
 // =============================================================
 
@@ -1179,7 +1330,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
     const master = custom.master || "switch.chauffage_general";
 
-    // Le switch général publie la config centrale de l'intégration :
+    // Le switch général peut publier la config centrale de l'intégration :
     //   mode_entity   -> entité du sélecteur de mode choisie par l'utilisateur
     //   boiler_entity -> entité chaudière choisie (absente en électrique)
     const attrs = this._hass?.states?.[master]?.attributes || {};
@@ -1191,8 +1342,9 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       chaudes: custom.chaudes || "sensor.pieces_chaudes",
       mode: this.config?.mode_entity || custom.mode || attrs.mode_entity || null,
       chaudiere: this.config?.boiler_entity || custom.chaudiere || attrs.boiler_entity || null,
-      // Temps de chauffe du jour de la chaudière (optionnel)
-      tempsChauffe: this.config?.heating_time_entity || custom.tempsChauffe || null,
+      // Temps de chauffe du jour de la chaudière : fourni par l'intégration
+      // (chauffage gaz uniquement)
+      tempsChauffe: custom.tempsChauffe || "sensor.temps_chauffe_jour_chaudiere",
     };
   }
 
@@ -1671,6 +1823,41 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
   }
 
   // ==========================================================
+  // LECTURE D'UN COMPTEUR "n/total"
+  // ==========================================================
+  //
+  // Les capteurs de l'intégration (pièces en chauffe / froides /
+  // chaudes) ont pour état un texte "n/total", par exemple "2/6".
+  // Un état purement numérique (avec attribut "total") est aussi
+  // accepté.
+  //
+  // ==========================================================
+
+  _readCount(st) {
+
+    if (!st) {
+      return { value: null, total: null };
+    }
+
+    const raw = String(st.state ?? "").trim();
+    const match = raw.match(/^(\d+)\s*\/\s*(\d+)$/);
+
+    if (match) {
+      return { value: parseInt(match[1], 10), total: parseInt(match[2], 10) };
+    }
+
+    const value = parseInt(raw, 10);
+
+    if (!Number.isFinite(value)) {
+      return { value: null, total: null };
+    }
+
+    const total = parseInt(st.attributes?.total, 10);
+
+    return { value, total: Number.isFinite(total) ? total : null };
+  }
+
+  // ==========================================================
   // MISE A JOUR DES VALEURS
   // ==========================================================
 
@@ -1696,10 +1883,15 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     els.offBtn.classList.toggle("na", !available);
     els.device.classList.toggle("on", available && isOn);
 
-    // --- Pièces en chauffe (lues dans l'intégration) ---
-    const pieces = states[ids.pieces];
-    const count = parseInt(pieces?.state, 10);
-    const total = parseInt(pieces?.attributes?.total, 10);
+    // --- Compteurs "n/total" (lus dans l'intégration) ---
+    const pieces = this._readCount(states[ids.pieces]);
+    const froidesCount = this._readCount(states[ids.froides]);
+    const chaudesCount = this._readCount(states[ids.chaudes]);
+
+    const count = pieces.value;
+    const total = [pieces.total, froidesCount.total, chaudesCount.total]
+      .find((t) => Number.isFinite(t)) ?? null;
+    const hasTotal = Number.isFinite(total) && total > 0;
 
     // --- Badge : En chauffe / Au repos / Éteint ---
     let badgeText = "--";
@@ -1724,20 +1916,14 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     // --- Pièces en chauffe : "x / total" + barre ---
     els.heat.innerHTML = !Number.isFinite(count)
       ? "--"
-      : Number.isFinite(total) ? `${count} <small>/ ${total}</small>` : `${count}`;
-    els.heatBar.style.width = Number.isFinite(count) && Number.isFinite(total) && total > 0
+      : hasTotal ? `${count} <small>/ ${total}</small>` : `${count}`;
+    els.heatBar.style.width = Number.isFinite(count) && hasTotal
       ? `${Math.round(Math.min(count / total, 1) * 100)}%`
       : "0%";
 
     // --- Pièces trop froides / trop chaudes (lues dans l'intégration) ---
-    const readCount = (id) => {
-      const v = parseInt(states[id]?.state, 10);
-      return Number.isFinite(v) ? v : null;
-    };
-
-    const froides = readCount(ids.froides);
-    const chaudes = readCount(ids.chaudes);
-    const hasTotal = Number.isFinite(total) && total > 0;
+    const froides = froidesCount.value;
+    const chaudes = chaudesCount.value;
 
     const fill = (bar, value) => {
       const ratio = value === null ? 0 : hasTotal ? Math.min(value / total, 1) : value > 0 ? 1 : 0;
@@ -1762,15 +1948,18 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     els.deviceBoiler.classList.toggle("hidden", !hasBoiler);
     els.deviceRad.classList.toggle("hidden", hasBoiler);
 
-    // --- Temps de chauffe du jour (bloc masqué si aucune entité fournie) ---
-    els.heatTime.classList.toggle("hidden", !ids.tempsChauffe);
+    // --- Temps de chauffe du jour de la chaudière (gaz uniquement) ---
+    // Lu directement dans l'intégration ; bloc masqué si l'entité n'existe pas.
+    const heatTimeState = states[ids.tempsChauffe];
 
-    if (ids.tempsChauffe) {
-      els.heatTimeValue.textContent = this._formatHeatTime(states[ids.tempsChauffe]);
+    els.heatTime.classList.toggle("hidden", !heatTimeState);
+
+    if (heatTimeState) {
+      els.heatTimeValue.textContent = this._formatHeatTime(heatTimeState);
     }
 
     // --- Mode de la maison (affiché dans le bandeau) ---
-    const mode = states[ids.mode]?.state;
+    const mode = ids.mode ? states[ids.mode]?.state : null;
     const modeOk = mode && mode !== "unknown" && mode !== "unavailable";
 
     els.bannerSub.textContent = modeOk ? `Mode ${mode}` : "Maison";
@@ -1889,27 +2078,23 @@ class ChauffageIntelligentCentralCardEditor extends HTMLElement {
         <ha-selector id="mode"></ha-selector>
         <div class="title">Chaudière (laisser vide en chauffage électrique)</div>
         <ha-selector id="boiler"></ha-selector>
-        <div class="title">Temps de chauffe du jour de la chaudière (optionnel)</div>
-        <ha-selector id="heatTime"></ha-selector>
         <div class="info">
           Si un champ est vide, la carte utilise l'entité publiée par
-          le switch général de l'intégration. Sans entité de temps de
-          chauffe, rien n'est affiché à cet endroit.
+          le switch général de l'intégration. Le temps de chauffe du
+          jour de la chaudière est lu automatiquement dans
+          l'intégration (chauffage gaz uniquement).
         </div>
       </div>
     `;
 
     this._mode = this.shadowRoot.querySelector("#mode");
     this._boiler = this.shadowRoot.querySelector("#boiler");
-    this._heatTime = this.shadowRoot.querySelector("#heatTime");
 
     this._mode.selector = { entity: { domain: ["input_select", "select", "sensor"] } };
     this._boiler.selector = { entity: { domain: ["switch", "input_boolean", "binary_sensor", "climate"] } };
 
     this._mode.addEventListener("value-changed", (e) => this._changed("mode_entity", e.detail.value));
     this._boiler.addEventListener("value-changed", (e) => this._changed("boiler_entity", e.detail.value));
-    this._heatTime.selector = { entity: { domain: ["sensor", "input_number", "number"] } };
-    this._heatTime.addEventListener("value-changed", (e) => this._changed("heating_time_entity", e.detail.value));
 
     this._built = true;
   }
@@ -1922,10 +2107,8 @@ class ChauffageIntelligentCentralCardEditor extends HTMLElement {
 
     this._mode.hass = this._hass;
     this._boiler.hass = this._hass;
-    this._heatTime.hass = this._hass;
     this._mode.value = this._config.mode_entity || "";
     this._boiler.value = this._config.boiler_entity || "";
-    this._heatTime.value = this._config.heating_time_entity || "";
   }
 
   _changed(key, value) {
