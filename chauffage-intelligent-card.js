@@ -1,3 +1,140 @@
+// =============================================================
+// OUTILS PARTAGES PAR LES TROIS CARTES
+// =============================================================
+
+function ciNormalize(text) {
+
+  return String(text || "")
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+// Humidité : Normal = vert, Élevé = jaune, Très élevé = orange,
+// Excessive = rouge. L'ordre des tests compte : "très élevé"
+// contient "élevé".
+function ciHumidityClass(text) {
+
+  const t = ciNormalize(text);
+
+  if (!t || ["--", "unknown", "unavailable"].includes(t)) return "";
+
+  if (t.includes("excessi")) return "error";
+  if (t.includes("tres")) return "warn";
+  if (t.includes("eleve")) return "caution";
+  if (t.includes("normal")) return "ok";
+
+  return "";
+}
+
+// Aération : Recommandée = vert, Possible = jaune, Peu utile = orange,
+// Déconseillée = rouge. L'ordre des tests compte : "déconseillée"
+// contient "conseillée".
+function ciAerationClass(text) {
+
+  const t = ciNormalize(text);
+
+  if (!t || ["--", "unknown", "unavailable"].includes(t)) return "";
+
+  if (t.includes("deconseille")) return "error";
+  if (t.includes("peu utile")) return "warn";
+  if (t.includes("possible")) return "caution";
+  if (t.includes("recommande") || t.includes("conseille")) return "ok";
+
+  return "";
+}
+
+// Classe de couleur d'une puce : "ok", "caution", "warn", "error" ou "" (neutre).
+function ciSetChipLevel(chip, level) {
+
+  if (!chip) {
+    return;
+  }
+
+  chip.classList.remove("ok", "caution", "warn", "error");
+
+  if (level) {
+    chip.classList.add(level);
+  }
+}
+
+// Couleur de l'anneau selon l'état de sécurité (suit le thème HA).
+function ciSecurityColor(securityState, fallback = "var(--disabled-text-color, #9e9e9e)") {
+
+  const map = {
+    vert: "var(--success-color, #4caf50)",
+    orange: "var(--warning-color, #ff9800)",
+    rouge: "var(--error-color, #f44336)",
+    gris: "var(--disabled-text-color, #9e9e9e)",
+  };
+
+  return map[securityState] || fallback;
+}
+
+// Temps de chauffe : accepte un nombre (unité h / min / s lue dans
+// l'entité, heures par défaut) ou un texte "HH:MM:SS" / "HH:MM".
+function ciFormatHeatTime(st) {
+
+  if (!st || st.state === "unavailable" || st.state === "unknown") {
+    return "--";
+  }
+
+  let minutes = null;
+  const raw = String(st.state).trim();
+
+  if (raw.includes(":")) {
+
+    const parts = raw.split(":").map(Number);
+
+    if (parts.length >= 2 && parts.every(Number.isFinite)) {
+      const [h, m, sec = 0] = parts;
+      minutes = h * 60 + m + sec / 60;
+    }
+
+  } else {
+
+    const n = parseFloat(raw);
+
+    if (Number.isFinite(n)) {
+      const unit = String(st.attributes?.unit_of_measurement || "h").toLowerCase();
+
+      if (unit === "s") minutes = n / 60;
+      else if (unit === "min") minutes = n;
+      else if (unit === "d") minutes = n * 1440;
+      else minutes = n * 60;
+    }
+  }
+
+  if (minutes === null) {
+    return raw;
+  }
+
+  const total = Math.round(minutes);
+  const h = Math.floor(total / 60);
+  const m = total % 60;
+
+  return h > 0 ? `${h} h ${String(m).padStart(2, "0")}` : `${m} min`;
+}
+
+// Vrai si l'une des entités suivies a changé depuis le dernier passage.
+// HA remplace l'objet d'état à chaque changement : la comparaison est
+// immédiate, et la carte ne retouche pas l'affichage pour rien quand une
+// autre entité de la maison change.
+function ciStatesChanged(card, states, ids) {
+
+  const current = ids.map((id) => (id ? states[id] : undefined));
+  const last = card._lastStates;
+
+  if (last && last.length === current.length && current.every((st, i) => st === last[i])) {
+    return false;
+  }
+
+  card._lastStates = current;
+
+  return true;
+}
+
+
 class ChauffageIntelligentCard extends HTMLElement {
 
   constructor() {
@@ -11,6 +148,8 @@ class ChauffageIntelligentCard extends HTMLElement {
     this._fenetreEntityId = undefined;
     this._humiditeEntityId = undefined;
     this._boostTimer = null;
+    this._watched = [];
+    this._lastStates = null;
   }
 
   // ==========================================================
@@ -44,7 +183,7 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     if (!this._rendered || this._lastArea !== area) {
       this._fullRender();
-    } else {
+    } else if (ciStatesChanged(this, hass.states, this._watched)) {
       this._updateValues();
     }
   }
@@ -329,48 +468,6 @@ class ChauffageIntelligentCard extends HTMLElement {
   //
   // ==========================================================
 
-  _formatHeatTime(st) {
-
-    if (!st || st.state === "unavailable" || st.state === "unknown") {
-      return "--";
-    }
-
-    let minutes = null;
-    const raw = String(st.state).trim();
-
-    if (raw.includes(":")) {
-
-      const parts = raw.split(":").map(Number);
-
-      if (parts.length >= 2 && parts.every(Number.isFinite)) {
-        const [h, m, sec = 0] = parts;
-        minutes = h * 60 + m + sec / 60;
-      }
-
-    } else {
-
-      const n = parseFloat(raw);
-
-      if (Number.isFinite(n)) {
-        const unit = String(st.attributes?.unit_of_measurement || "h").toLowerCase();
-
-        if (unit === "s") minutes = n / 60;
-        else if (unit === "min") minutes = n;
-        else if (unit === "d") minutes = n * 1440;
-        else minutes = n * 60;
-      }
-    }
-
-    if (minutes === null) {
-      return raw;
-    }
-
-    const total = Math.round(minutes);
-    const h = Math.floor(total / 60);
-    const m = total % 60;
-
-    return h > 0 ? `${h} h ${String(m).padStart(2, "0")}` : `${m} min`;
-  }
 
   // ==========================================================
   // MODE BOOST
@@ -381,8 +478,8 @@ class ChauffageIntelligentCard extends HTMLElement {
   // le boost.
   //
   // Temps restant, par ordre de priorité :
-  //   1) un attribut de fin (date ISO) : fin, end, end_time...
-  //   2) un attribut de temps restant (en minutes, ou "HH:MM:SS")
+  //   1) attribut "fin" (date ISO)
+  //   2) attribut "minutes_restantes"
   //   3) à défaut : durée configurée (attribut "duree", en minutes)
   //      moins le temps écoulé depuis le passage du switch sur "on"
   //
@@ -416,37 +513,21 @@ class ChauffageIntelligentCard extends HTMLElement {
     const a = st?.attributes || {};
     const now = Date.now();
 
-    for (const key of ["fin", "end", "end_time", "ends_at", "expires_at", "expiration", "heure_fin", "fin_boost", "boost_end"]) {
-      if (a[key]) {
-        const t = Date.parse(a[key]);
-        if (Number.isFinite(t)) {
-          return t - now;
-        }
-      }
+    // 1) Heure de fin publiée par l'intégration (date ISO)
+    const end = Date.parse(a.fin);
+
+    if (Number.isFinite(end)) {
+      return end - now;
     }
 
-    for (const key of ["restant", "temps_restant", "remaining", "remaining_time", "minutes_restantes", "duree_restante"]) {
+    // 2) Minutes restantes publiées par l'intégration
+    const minutes = parseFloat(a.minutes_restantes);
 
-      const v = a[key];
-
-      if (v === undefined || v === null || v === "") {
-        continue;
-      }
-
-      if (typeof v === "string" && v.includes(":")) {
-        const parts = v.split(":").map(Number);
-        if (parts.every(Number.isFinite)) {
-          const [h, m, sec] = parts.length === 3 ? parts : [0, parts[0], parts[1] || 0];
-          return ((h * 60 + m) * 60 + sec) * 1000;
-        }
-      }
-
-      const n = parseFloat(v);
-      if (Number.isFinite(n)) {
-        return n * 60000;
-      }
+    if (Number.isFinite(minutes)) {
+      return minutes * 60000;
     }
 
+    // 3) Durée configurée moins le temps écoulé depuis le passage sur "on"
     const duree = parseFloat(a.duree);
     const since = Date.parse(st?.last_changed);
 
@@ -494,7 +575,7 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     els.boostChip.classList.toggle("clickable", available);
     els.boostChip.setAttribute("aria-pressed", available && isOn ? "true" : "false");
-    this._setChipLevel(els.boostChip, available && isOn ? "warn" : "");
+    ciSetChipLevel(els.boostChip, available && isOn ? "warn" : "");
 
     if (!available) {
       els.boost.textContent = "--";
@@ -548,24 +629,13 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     const registryName = this._hass?.areas?.[areaId]?.name;
 
-    return registryName || this.config?.area_name || areaId;
+    return registryName || areaId;
   }
 
   // ==========================================================
   // COULEUR DE SECURITE (suit le thème HA, pas de couleur fixe)
   // ==========================================================
 
-  _securityColorVar(securityState) {
-
-    const map = {
-      vert: "var(--success-color, #4caf50)",
-      orange: "var(--warning-color, #ff9800)",
-      rouge: "var(--error-color, #f44336)",
-      gris: "var(--disabled-text-color, #9e9e9e)",
-    };
-
-    return map[securityState] || map.gris;
-  }
 
   // ==========================================================
   // COULEUR DES PUCES (humidité, aération, fenêtre)
@@ -580,59 +650,11 @@ class ChauffageIntelligentCard extends HTMLElement {
   // Humidité : Normal = vert, Élevé = jaune, Très élevé = orange,
   // Excessive = rouge. L'ordre des tests compte : "très élevé"
   // contient "élevé".
-  _humidityClass(text) {
-
-    const t = String(text || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
-
-    if (!t || ["--", "unknown", "unavailable"].includes(t)) {
-      return "";
-    }
-
-    if (t.includes("excessi")) return "error";
-    if (t.includes("tres")) return "warn";
-    if (t.includes("eleve")) return "caution";
-    if (t.includes("normal")) return "ok";
-
-    return "";
-  }
 
   // Aération : Recommandée = vert, Possible = jaune, Peu utile = orange,
   // Déconseillée = rouge. L'ordre des tests compte : "déconseillée"
   // contient "conseillée".
-  _aerationClass(text) {
 
-    const t = String(text || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
-
-    if (!t || ["--", "unknown", "unavailable"].includes(t)) {
-      return "";
-    }
-
-    if (t.includes("deconseille")) return "error";
-    if (t.includes("peu utile")) return "warn";
-    if (t.includes("possible")) return "caution";
-    if (t.includes("recommande") || t.includes("conseille")) return "ok";
-
-    return "";
-  }
-
-  _setChipLevel(chip, level) {
-
-    if (!chip) {
-      return;
-    }
-
-    chip.classList.remove("ok", "caution", "warn", "error");
-
-    if (level) {
-      chip.classList.add(level);
-    }
-  }
 
   // ==========================================================
   // RENDU COMPLET (structure + styles)
@@ -923,6 +945,21 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     this._entities = entities;
 
+    // Entités dont un changement impose de rafraîchir l'affichage
+    this._watched = entities
+      ? [
+          this._climateEntityId,
+          this._fenetreEntityId,
+          this._humiditeEntityId,
+          entities.securite,
+          entities.aeration,
+          entities.humidite,
+          entities.tempsChauffeJour,
+          entities.boost,
+        ]
+      : [];
+    this._lastStates = null;
+
     if (this._valueEls && this._valueEls.boostChip) {
       this._valueEls.boostChip.addEventListener("click", () => this._toggleBoost());
     }
@@ -930,6 +967,7 @@ class ChauffageIntelligentCard extends HTMLElement {
     this._rendered = true;
 
     this._updateValues();
+    ciStatesChanged(this, this._hass.states, this._watched);
   }
 
   // ==========================================================
@@ -950,7 +988,7 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     // --- Sécurité (pilote la couleur de l'anneau) ---
     const securiteState = this._getState(this._entities.securite);
-    const ringColor = this._securityColorVar(securiteState);
+    const ringColor = ciSecurityColor(securiteState);
 
     // --- Entité climate de la pièce (thermostat, pas la vanne) ---
     const climateState = this._climateEntityId
@@ -990,7 +1028,7 @@ class ChauffageIntelligentCard extends HTMLElement {
     els.dialHeat.classList.toggle("hidden", !heatState);
 
     if (heatState) {
-      els.dialHeatValue.textContent = `${this._formatHeatTime(heatState)} aujourd'hui`;
+      els.dialHeatValue.textContent = `${ciFormatHeatTime(heatState)} aujourd'hui`;
     }
 
     // --- Badge chauffe : Chauffe / Au repos / Éteint ---
@@ -1006,49 +1044,15 @@ class ChauffageIntelligentCard extends HTMLElement {
     els.heatingLabel.textContent = heatingText;
 
     // --- Humidité : "Niveau - valeur%" ---
-    const humiditeState = this._hass.states[this._entities.humidite];
-    const humAttrs = humiditeState?.attributes || {};
-    const humRaw = humiditeState?.state;
+    // Niveau : état texte du capteur de l'intégration (Normal, Élevée...).
+    // Valeur : capteur d'humidité de la pièce (même appareil que la température).
+    const humRaw = this._hass.states[this._entities.humidite]?.state;
+    const niveau = humRaw && humRaw !== "unknown" && humRaw !== "unavailable" ? humRaw : null;
 
-    let niveau = null;
-    let valeur = null;
-
-    // 1) L'état du capteur : numérique, ou texte qualitatif (ex. "normal")
-    const numericState = parseFloat(humRaw);
-
-    if (Number.isFinite(numericState)) {
-      valeur = numericState;
-      niveau = humAttrs.niveau || null;
-    } else if (humRaw && humRaw !== "unknown" && humRaw !== "unavailable") {
-      niveau = humRaw;
-    }
-
-    // 2) Valeur dans les attributs du capteur
-    if (valeur === null) {
-      for (const key of ["valeur", "humidite", "humidity", "value", "taux", "taux_humidite", "current_humidity"]) {
-        const v = parseFloat(humAttrs[key]);
-        if (Number.isFinite(v)) {
-          valeur = v;
-          break;
-        }
-      }
-    }
-
-    // 3) Humidité mesurée par le thermostat de la pièce
-    if (valeur === null) {
-      const v = parseFloat(climateState?.attributes?.current_humidity);
-      if (Number.isFinite(v)) {
-        valeur = v;
-      }
-    }
-
-    // 4) Capteur d'humidité de la pièce (même appareil que la température)
-    if (valeur === null && this._humiditeEntityId) {
-      const v = parseFloat(this._hass.states[this._humiditeEntityId]?.state);
-      if (Number.isFinite(v)) {
-        valeur = v;
-      }
-    }
+    const humValue = this._humiditeEntityId
+      ? parseFloat(this._hass.states[this._humiditeEntityId]?.state)
+      : NaN;
+    const valeur = Number.isFinite(humValue) ? humValue : null;
 
     let humiditeText = "--";
 
@@ -1064,13 +1068,13 @@ class ChauffageIntelligentCard extends HTMLElement {
     els.humidite.textContent = humiditeText;
 
     // Couleur selon le niveau (normal = vert, élevé = jaune, très élevé = orange, excessive = rouge)
-    this._setChipLevel(els.humiditeChip, this._humidityClass(niveau));
+    ciSetChipLevel(els.humiditeChip, ciHumidityClass(niveau));
 
     // --- Aération ---
     const aerationState = this._getState(this._entities.aeration);
     els.aeration.textContent = aerationState === "unknown" ? "--" : aerationState;
 
-    this._setChipLevel(els.aerationChip, this._aerationClass(aerationState));
+    ciSetChipLevel(els.aerationChip, ciAerationClass(aerationState));
 
     // --- Fenêtre / porte ---
     const fenetreState = this._getState(this._fenetreEntityId);
@@ -1081,7 +1085,7 @@ class ChauffageIntelligentCard extends HTMLElement {
         : "--";
 
     // Ouverte = rouge, fermée = vert
-    this._setChipLevel(
+    ciSetChipLevel(
       els.fenetreChip,
       fenetreState === "on" ? "error" : fenetreState === "off" ? "ok" : ""
     );
@@ -1284,8 +1288,7 @@ if (!window.customCards.some(card => card.type === "chauffage-intelligent-card")
 //   mode_entity   -> ex. input_select.mode_presence_maison
 //   boiler_entity -> ex. switch.ma_chaudiere (absent en électrique)
 //   heating_type  -> "gaz" (dessin de chaudière) ou "electrique" (radiateur)
-// Aucun réglage nécessaire dans la carte : l'éditeur ne sert qu'à
-// forcer une entité si besoin.
+// Aucun réglage nécessaire dans la carte.
 //
 // =============================================================
 
@@ -1324,36 +1327,34 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
   }
 
   // ==========================================================
-  // ENTITES (noms fixes, surchargeables via config.entities)
+  // ENTITES (noms fixes créés par l'intégration)
   // ==========================================================
 
   _ids() {
 
-    const custom = this.config?.entities || {};
+    const master = "switch.chauffage_general";
 
-    const master = custom.master || "switch.chauffage_general";
-
-    // Le switch général peut publier la config centrale de l'intégration :
-    //   mode_entity   -> entité du sélecteur de mode choisie par l'utilisateur
-    //   boiler_entity -> entité chaudière choisie (absente en électrique)
+    // Le switch général publie la config centrale de l'intégration :
+    //   mode_entity   -> entité du sélecteur de mode de la maison
+    //   boiler_entity -> entité chaudière (absente en électrique)
+    //   heating_type  -> "gaz" ou "electrique"
     const attrs = this._hass?.states?.[master]?.attributes || {};
 
     return {
       master,
       heatingType: attrs.heating_type || null,
-      pieces: custom.pieces || "sensor.pieces_en_chauffe",
-      froides: custom.froides || "sensor.pieces_froides",
-      chaudes: custom.chaudes || "sensor.pieces_chaudes",
-      mode: this.config?.mode_entity || custom.mode || attrs.mode_entity || null,
-      chaudiere: this.config?.boiler_entity || custom.chaudiere || attrs.boiler_entity || null,
-      // Temps de chauffe du jour de la chaudière : fourni par l'intégration
-      // (chauffage gaz uniquement)
-      tempsChauffe: custom.tempsChauffe || "sensor.heures_chauffe_chaudiere",
+      pieces: "sensor.pieces_en_chauffe",
+      froides: "sensor.pieces_froides",
+      chaudes: "sensor.pieces_chaudes",
+      mode: attrs.mode_entity || null,
+      chaudiere: attrs.boiler_entity || null,
+      // Temps de chauffe du jour de la chaudière (chauffage gaz uniquement)
+      tempsChauffe: "sensor.heures_chauffe_chaudiere",
       // Températures du jour (optionnelles : créées selon la config centrale)
-      extMini: custom.extMini || "sensor.temperature_ext_mini",
-      extMaxi: custom.extMaxi || "sensor.temperature_ext_maxi",
-      prevMini: custom.prevMini || "sensor.temperature_prevue_mini",
-      prevMaxi: custom.prevMaxi || "sensor.temperature_prevue_maxi",
+      extMini: "sensor.temperature_ext_mini",
+      extMaxi: "sensor.temperature_ext_maxi",
+      prevMini: "sensor.temperature_prevue_mini",
+      prevMaxi: "sensor.temperature_prevue_maxi",
     };
   }
 
@@ -1575,10 +1576,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           transition: border-color 0.3s ease;
         }
 
-        .tile.hidden {
-          display: none;
-        }
-
         .tile-head {
           display: flex;
           align-items: center;
@@ -1598,22 +1595,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
           font-weight: 500;
           line-height: 1.1;
           word-break: break-word;
-        }
-
-        .tile-value.text {
-          font-size: 22px;
-        }
-
-        .tile-value small {
-          font-size: 16px;
-          font-weight: 400;
-          color: var(--secondary-text-color);
-        }
-
-        .tile-sub {
-          margin-top: 4px;
-          font-size: 12px;
-          color: var(--secondary-text-color);
         }
 
         .bar {
@@ -1915,8 +1896,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
   //
   // Les capteurs de l'intégration (pièces en chauffe / froides /
   // chaudes) ont pour état un texte "n/total", par exemple "2/6".
-  // Un état purement numérique (avec attribut "total") est aussi
-  // accepté.
   //
   // ==========================================================
 
@@ -1933,15 +1912,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
       return { value: parseInt(match[1], 10), total: parseInt(match[2], 10) };
     }
 
-    const value = parseInt(raw, 10);
-
-    if (!Number.isFinite(value)) {
-      return { value: null, total: null };
-    }
-
-    const total = parseInt(st.attributes?.total, 10);
-
-    return { value, total: Number.isFinite(total) ? total : null };
+    return { value: null, total: null };
   }
 
   // ==========================================================
@@ -1957,6 +1928,16 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     const ids = this._ids();
     const states = this._hass.states;
     const els = this._els;
+
+    // Rien à refaire si aucune des entités suivies n'a changé.
+    const watched = [
+      ids.master, ids.pieces, ids.froides, ids.chaudes, ids.mode, ids.chaudiere,
+      ids.tempsChauffe, ids.extMini, ids.extMaxi, ids.prevMini, ids.prevMaxi,
+    ];
+
+    if (!ciStatesChanged(this, states, watched)) {
+      return;
+    }
 
     // --- Boutons : celui de l'état actuel passe au bleu ---
     const master = states[ids.master];
@@ -2044,7 +2025,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     els.heatTime.classList.toggle("hidden", !heatTimeState);
 
     if (heatTimeState) {
-      els.heatTimeValue.textContent = this._formatHeatTime(heatTimeState);
+      els.heatTimeValue.textContent = ciFormatHeatTime(heatTimeState);
     }
 
     // --- Températures du jour (blocs masqués si les capteurs n'existent pas) ---
@@ -2092,48 +2073,6 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
   // par défaut) ou un texte "HH:MM:SS" / "HH:MM".
   // ==========================================================
 
-  _formatHeatTime(st) {
-
-    if (!st || st.state === "unavailable" || st.state === "unknown") {
-      return "--";
-    }
-
-    let minutes = null;
-    const raw = String(st.state).trim();
-
-    if (raw.includes(":")) {
-
-      const parts = raw.split(":").map(Number);
-
-      if (parts.length >= 2 && parts.every(Number.isFinite)) {
-        const [h, m, sec = 0] = parts;
-        minutes = h * 60 + m + sec / 60;
-      }
-
-    } else {
-
-      const n = parseFloat(raw);
-
-      if (Number.isFinite(n)) {
-        const unit = String(st.attributes?.unit_of_measurement || "h").toLowerCase();
-
-        if (unit === "s") minutes = n / 60;
-        else if (unit === "min") minutes = n;
-        else if (unit === "d") minutes = n * 1440;
-        else minutes = n * 60;
-      }
-    }
-
-    if (minutes === null) {
-      return raw;
-    }
-
-    const total = Math.round(minutes);
-    const h = Math.floor(total / 60);
-    const m = total % 60;
-
-    return h > 0 ? `${h} h ${String(m).padStart(2, "0")}` : `${m} min`;
-  }
 
   // ==========================================================
   // EDITEUR / TAILLE
@@ -2154,7 +2093,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
 
 // =============================================================
-// EDITEUR (choix du mode de la maison et de la chaudière)
+// EDITEUR (aucun réglage : tout vient de l'intégration)
 // =============================================================
 
 class ChauffageIntelligentCentralCardEditor extends HTMLElement {
@@ -2168,13 +2107,11 @@ class ChauffageIntelligentCentralCardEditor extends HTMLElement {
   setConfig(config) {
     this._config = { ...(config || {}) };
     this._build();
-    this._sync();
   }
 
   set hass(hass) {
     this._hass = hass;
     this._build();
-    this._sync();
   }
 
   get hass() {
@@ -2189,68 +2126,16 @@ class ChauffageIntelligentCentralCardEditor extends HTMLElement {
 
     this.shadowRoot.innerHTML = `
       <style>
-        .container { padding: 8px 0 16px 0; }
-        .title { font-size: 14px; font-weight: 500; margin: 12px 0 8px; }
-        .info { margin-top: 10px; font-size: 12px; color: var(--secondary-text-color, #999999); }
+        .info { padding: 8px 0 16px 0; font-size: 14px; color: var(--secondary-text-color, #999999); }
       </style>
-      <div class="container">
-        <div class="title">Mode de la maison</div>
-        <ha-selector id="mode"></ha-selector>
-        <div class="title">Chaudière (laisser vide en chauffage électrique)</div>
-        <ha-selector id="boiler"></ha-selector>
-        <div class="info">
-          Ces champs sont facultatifs : par défaut, la carte utilise les
-          réglages de la config centrale, publiés par le switch général
-          de l'intégration (mode de la maison, chaudière, type de
-          chauffage). Le temps de chauffe du jour de la chaudière est lu
-          automatiquement (chauffage gaz uniquement).
-        </div>
+      <div class="info">
+        Aucun réglage nécessaire : le mode de la maison, la chaudière et
+        le type de chauffage sont lus automatiquement dans la config
+        centrale de l'intégration.
       </div>
     `;
 
-    this._mode = this.shadowRoot.querySelector("#mode");
-    this._boiler = this.shadowRoot.querySelector("#boiler");
-
-    this._mode.selector = { entity: { domain: ["input_select", "select", "sensor"] } };
-    this._boiler.selector = { entity: { domain: ["switch", "input_boolean", "binary_sensor", "climate"] } };
-
-    this._mode.addEventListener("value-changed", (e) => this._changed("mode_entity", e.detail.value));
-    this._boiler.addEventListener("value-changed", (e) => this._changed("boiler_entity", e.detail.value));
-
     this._built = true;
-  }
-
-  _sync() {
-
-    if (!this._built || !this._hass || !this._config) {
-      return;
-    }
-
-    this._mode.hass = this._hass;
-    this._boiler.hass = this._hass;
-    this._mode.value = this._config.mode_entity || "";
-    this._boiler.value = this._config.boiler_entity || "";
-  }
-
-  _changed(key, value) {
-
-    const config = { ...this._config };
-
-    if (value) {
-      config[key] = value;
-    } else {
-      delete config[key];
-    }
-
-    this._config = config;
-
-    this.dispatchEvent(
-      new CustomEvent("config-changed", {
-        detail: { config },
-        bubbles: true,
-        composed: true,
-      })
-    );
   }
 }
 
@@ -2318,6 +2203,8 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
     this._lastKey = null;
     this._els = null;
     this._ids = null;
+    this._watched = [];
+    this._lastStates = null;
   }
 
   setConfig(config) {
@@ -2339,7 +2226,7 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
 
     if (!this._rendered || this._lastKey !== this._configKey()) {
       this._fullRender();
-    } else {
+    } else if (ciStatesChanged(this, hass.states, this._watched)) {
       this._updateValues();
     }
   }
@@ -2395,72 +2282,13 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
     return text ? text.charAt(0).toUpperCase() + text.slice(1) : text;
   }
 
-  _securityColorVar(securityState) {
-
-    const map = {
-      vert: "var(--success-color, #4caf50)",
-      orange: "var(--warning-color, #ff9800)",
-      rouge: "var(--error-color, #f44336)",
-      gris: "var(--disabled-text-color, #9e9e9e)",
-    };
-
-    return map[securityState] || "var(--primary-color, #03a9f4)";
-  }
 
   // Humidité : Normal = vert, Élevé = jaune, Très élevé = orange,
   // Excessive = rouge (mêmes règles que la carte pièce).
-  _humidityClass(text) {
-
-    const t = String(text || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
-
-    if (!t || ["--", "unknown", "unavailable"].includes(t)) {
-      return "";
-    }
-
-    if (t.includes("excessi")) return "error";
-    if (t.includes("tres")) return "warn";
-    if (t.includes("eleve")) return "caution";
-    if (t.includes("normal")) return "ok";
-
-    return "";
-  }
 
   // Aération : Recommandée = vert, Possible = jaune, Peu utile = orange,
   // Déconseillée = rouge (mêmes règles que la carte pièce).
-  _aerationClass(text) {
 
-    const t = String(text || "")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
-
-    if (!t || ["--", "unknown", "unavailable"].includes(t)) {
-      return "";
-    }
-
-    if (t.includes("deconseille")) return "error";
-    if (t.includes("peu utile")) return "warn";
-    if (t.includes("possible")) return "caution";
-    if (t.includes("recommande") || t.includes("conseille")) return "ok";
-
-    return "";
-  }
-
-  _setChipLevel(chip, level) {
-
-    if (!chip) {
-      return;
-    }
-
-    chip.classList.remove("ok", "caution", "warn", "error");
-
-    if (level) {
-      chip.classList.add(level);
-    }
-  }
 
   _getName(area, ids) {
 
@@ -2494,6 +2322,19 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
     const hasSource = area || c.name || c.temperature_entity || c.humidity_entity;
 
     this._ids = hasSource ? this._resolveIds(area) : null;
+
+    // Entités dont un changement impose de rafraîchir l'affichage
+    this._watched = this._ids
+      ? [
+          this._ids.temperature,
+          this._ids.humidite,
+          this._ids.securite,
+          this._ids.humiditeTexte,
+          this._ids.aeration,
+          this._ids.fenetre,
+        ]
+      : [];
+    this._lastStates = null;
 
     const name = this._getName(area, this._ids);
 
@@ -2699,6 +2540,7 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
     this._rendered = true;
 
     this._updateValues();
+    ciStatesChanged(this, this._hass.states, this._watched);
   }
 
   // ==========================================================
@@ -2720,35 +2562,9 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
     const temperature = this._num(ids.temperature);
 
     // --- Humidité : "Niveau - valeur%" ---
-    const humState = ids.humiditeTexte ? states[ids.humiditeTexte] : null;
-    const humAttrs = humState?.attributes || {};
-    const humRaw = humState?.state;
-
-    let niveau = null;
-    let valeur = null;
-
-    const numericState = parseFloat(humRaw);
-
-    if (Number.isFinite(numericState)) {
-      valeur = numericState;
-      niveau = humAttrs.niveau || null;
-    } else if (humRaw && humRaw !== "unknown" && humRaw !== "unavailable") {
-      niveau = humRaw;
-    }
-
-    if (valeur === null) {
-      for (const key of ["valeur", "humidite", "humidity", "value", "taux", "taux_humidite", "current_humidity"]) {
-        const v = parseFloat(humAttrs[key]);
-        if (Number.isFinite(v)) {
-          valeur = v;
-          break;
-        }
-      }
-    }
-
-    if (valeur === null) {
-      valeur = this._num(ids.humidite);
-    }
+    const humRaw = ids.humiditeTexte ? states[ids.humiditeTexte]?.state : null;
+    const niveau = humRaw && humRaw !== "unknown" && humRaw !== "unavailable" ? humRaw : null;
+    const valeur = this._num(ids.humidite);
 
     let humiditeText = null;
 
@@ -2782,21 +2598,22 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
 
     els.dialProgress.style.strokeDasharray = `${circumference}`;
     els.dialProgress.style.strokeDashoffset = `${circumference * (1 - ratio)}`;
-    els.dialProgress.style.stroke = this._securityColorVar(
-      ids.securite ? states[ids.securite]?.state : null
+    els.dialProgress.style.stroke = ciSecurityColor(
+      ids.securite ? states[ids.securite]?.state : null,
+      "var(--primary-color, #03a9f4)"
     );
 
     // --- Puces (masquées quand l'information n'existe pas) ---
     els.humiditeChip.classList.toggle("hidden", humiditeText === null);
     els.humidite.textContent = humiditeText ?? "--";
-    this._setChipLevel(els.humiditeChip, this._humidityClass(niveau));
+    ciSetChipLevel(els.humiditeChip, ciHumidityClass(niveau));
 
     els.aerationChip.classList.toggle("hidden", !ids.aeration);
 
     if (ids.aeration) {
       const a = states[ids.aeration]?.state;
       els.aeration.textContent = a && a !== "unknown" && a !== "unavailable" ? a : "--";
-      this._setChipLevel(els.aerationChip, this._aerationClass(a));
+      ciSetChipLevel(els.aerationChip, ciAerationClass(a));
     }
 
     els.fenetreChip.classList.toggle("hidden", !ids.fenetre);
@@ -2806,7 +2623,7 @@ class ChauffageIntelligentSensorCard extends HTMLElement {
       els.fenetre.textContent = f === "on" ? "Ouverte" : f === "off" ? "Fermée" : "--";
 
       // Ouverte = rouge, fermée = vert
-      this._setChipLevel(
+      ciSetChipLevel(
         els.fenetreChip,
         f === "on" ? "error" : f === "off" ? "ok" : ""
       );
