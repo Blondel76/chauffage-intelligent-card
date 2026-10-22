@@ -997,7 +997,12 @@ class ChauffageIntelligentCard extends HTMLElement {
 
     const current = climateState?.attributes?.current_temperature;
     const target = climateState?.attributes?.temperature;
-    const heating = climateState?.attributes?.hvac_action === "heating";
+    // Chauffe réelle publiée par l'intégration (vanne ouverte + chaudière en
+    // gaz, thermostat en électrique) ; à défaut, la demande du thermostat.
+    const securiteAttrs = this._hass.states[this._entities.securite]?.attributes;
+    const heating = typeof securiteAttrs?.en_chauffe === "boolean"
+      ? securiteAttrs.en_chauffe
+      : climateState?.attributes?.hvac_action === "heating";
 
     if (current !== undefined && current !== null) {
 
