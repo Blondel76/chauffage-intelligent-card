@@ -1282,9 +1282,10 @@ if (!window.customCards.some(card => card.type === "chauffage-intelligent-card")
 // les entités choisies par l'utilisateur dans la config centrale. Le
 // switch général peut les publier dans ses attributs :
 //   mode_entity   -> ex. input_select.mode_presence_maison
-//   boiler_entity -> ex. switch.ma_chaudiere (absent en électrique :
-//                    le bloc chaudière est alors masqué)
-// À défaut, ils se règlent dans l'éditeur de la carte.
+//   boiler_entity -> ex. switch.ma_chaudiere (absent en électrique)
+//   heating_type  -> "gaz" (dessin de chaudière) ou "electrique" (radiateur)
+// Aucun réglage nécessaire dans la carte : l'éditeur ne sert qu'à
+// forcer une entité si besoin.
 //
 // =============================================================
 
@@ -1339,6 +1340,7 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
 
     return {
       master,
+      heatingType: attrs.heating_type || null,
       pieces: custom.pieces || "sensor.pieces_en_chauffe",
       froides: custom.froides || "sensor.pieces_froides",
       chaudes: custom.chaudes || "sensor.pieces_chaudes",
@@ -2028,7 +2030,9 @@ class ChauffageIntelligentCentralCard extends HTMLElement {
     fill(els.chaudesBar, chaudes);
 
     // --- Vignette : chaudière si une entité chaudière existe, sinon radiateur (électrique) ---
-    const hasBoiler = !!(ids.chaudiere && states[ids.chaudiere]) || !!states[ids.tempsChauffe];
+    const hasBoiler = ids.heatingType
+      ? ids.heatingType === "gaz"
+      : !!(ids.chaudiere && states[ids.chaudiere]) || !!states[ids.tempsChauffe];
 
     els.deviceBoiler.classList.toggle("hidden", !hasBoiler);
     els.deviceRad.classList.toggle("hidden", hasBoiler);
@@ -2195,10 +2199,11 @@ class ChauffageIntelligentCentralCardEditor extends HTMLElement {
         <div class="title">Chaudière (laisser vide en chauffage électrique)</div>
         <ha-selector id="boiler"></ha-selector>
         <div class="info">
-          Si un champ est vide, la carte utilise l'entité publiée par
-          le switch général de l'intégration. Le temps de chauffe du
-          jour de la chaudière est lu automatiquement dans
-          l'intégration (chauffage gaz uniquement).
+          Ces champs sont facultatifs : par défaut, la carte utilise les
+          réglages de la config centrale, publiés par le switch général
+          de l'intégration (mode de la maison, chaudière, type de
+          chauffage). Le temps de chauffe du jour de la chaudière est lu
+          automatiquement (chauffage gaz uniquement).
         </div>
       </div>
     `;
